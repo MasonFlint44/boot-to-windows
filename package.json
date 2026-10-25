@@ -1,0 +1,16 @@
+{
+  "name": "boot-to-windows",
+  "private": true,
+  "description": "Dev tooling only; the extension itself has no npm dependencies.",
+  "license": "GPL-2.0-or-later",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "test": "gjs -m tests/unit/run.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "9.39.1",
+    "eslint": "9.39.1",
+    "globals": "16.5.0"
+  }
+}

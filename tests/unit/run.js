@@ -11,6 +11,8 @@ import './state.test.js';
 import './writer.test.js';
 import './helperCore.test.js';
 import './firmware.test.js';
+import './presentation.test.js';
+import './install.test.js';
 
 // Gio async calls need a running main loop.
 const loop = new GLib.MainLoop(null, false);
