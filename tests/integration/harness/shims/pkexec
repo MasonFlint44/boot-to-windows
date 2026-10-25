@@ -1,0 +1,19 @@
+#!/bin/bash
+# Fake pkexec: logs argv (one shell-quoted line per call) to $HARNESS_RUN/pkexec.log,
+# then runs the command as the calling user. Behaviour knob: $HARNESS_RUN/pkexec.mode
+#   allow (default) | dismiss (exit 126, like closing the auth dialog) | deny (exit 127)
+#   | slow (wait 3s, then allow: lets tests act while a write is in flight)
+HARNESS_RUN=${HARNESS_RUN:-/run/harness}
+printf '%q ' "$@" | sed 's/ $//' >> "$HARNESS_RUN/pkexec.log"; echo >> "$HARNESS_RUN/pkexec.log"
+mode=$(cat "$HARNESS_RUN/pkexec.mode" 2>/dev/null || echo allow)
+case $mode in
+    dismiss) echo "Error executing command as another user: Request dismissed" >&2; exit 126 ;;
+    deny)    echo "Error executing command as another user: Not authorized" >&2; exit 127 ;;
+    slow)    sleep 3 ;;
+esac
+[ "$1" = --disable-internal-agent ] && shift
+case $1 in
+    /*) ;;
+    *) echo "pkexec (fake): program must be an absolute path: $1" >&2; exit 127 ;;
+esac
+exec "$@"

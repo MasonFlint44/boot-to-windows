@@ -13,13 +13,38 @@ jobs:
           node-version: 22
       - run: npm ci
       - run: npm run lint
-      - run: sudo apt-get update && sudo apt-get install -y gjs
+      - name: shellcheck
+        run: >
+          shellcheck -x -e SC1091,SC2012
+          tests/integration/run.sh tests/integration/test-all.sh
+          tests/integration/harness/*.sh tests/integration/hooks/*.sh tools/*.sh
+      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs gnome-shell
       - run: npm test
-      - name: Pack
-        run: |
-          sudo apt-get install -y gnome-shell-common gnome-shell || true
-          ./tools/pack.sh
+      - run: ./tools/pack.sh
       - uses: actions/upload-artifact@v4
         with:
           name: extension-zip
           path: build/*.shell-extension.zip
+
+  # Every GNOME Shell version metadata.json claims, in a real headless shell,
+  # with the strict version gate on. A version only belongs in shell-version
+  # if its row here is green.
+  gnome-shell:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        gnome: [45, 46, 47, 48, 49, 50]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check the matrix matches metadata.json
+        run: |
+          python3 -c 'import json,sys; v=json.load(open("extension/metadata.json"))["shell-version"]; sys.exit(0 if "${{ matrix.gnome }}" in v else "not in shell-version")'
+      - name: Integration suites on GNOME ${{ matrix.gnome }}
+        run: tests/integration/test-all.sh ${{ matrix.gnome }}
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gnome-${{ matrix.gnome }}-logs
+          path: tests/integration/.work/

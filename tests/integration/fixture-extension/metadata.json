@@ -1,0 +1,6 @@
+{
+  "uuid": "harness-probe@btw.test",
+  "name": "Harness Probe",
+  "description": "Stand-in for Boot to Windows used to prove the integration harness.",
+  "shell-version": ["45"]
+}

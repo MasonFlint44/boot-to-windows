@@ -60,8 +60,13 @@ const BootToWindowsToggle = GObject.registerClass({
         return this._state;
     }
 
-    /** Re-read the firmware. Out-of-order results are dropped. */
+    /**
+     * Re-read the firmware. Out-of-order results are dropped, and nothing is
+     * read during a write: the write reports its own verified result.
+     */
     async refresh() {
+        if (this._busy)
+            return;
         const seq = ++this._seq;
         try {
             const state = deriveState(await readSnapshot(this._cancellable));
@@ -80,22 +85,25 @@ const BootToWindowsToggle = GObject.registerClass({
     }
 
     _render() {
+        // Hidden until the first firmware read lands (a few milliseconds).
         const p = this._state ? presentation(this._state)
-            : {checked: false, sensitive: false, subtitle: null, header: '', canDisarm: false};
+            : {visible: false, checked: false, subtitle: null, header: '', canDisarm: false};
+        this.visible = p.visible;
         this.checked = p.checked;
-        this.reactive = p.sensitive && !this._busy;
+        // Also disables the menu arrow, which is fine for a write's duration.
+        this.reactive = !this._busy;
         this.subtitle = this._busy ? 'Waiting…' : p.subtitle;
         this.menu.setHeader(ICON, 'Next Boot', p.header);
 
         const restart = SystemActions.getDefault().canRestart;
-        this._restartItem.setSensitive(p.sensitive && !this._busy && restart);
+        this._restartItem.setSensitive(!this._busy && restart);
         this._disarmItem.visible = p.canDisarm;
         this._disarmItem.setSensitive(!this._busy);
         this.emit('state-changed');
     }
 
     _onClicked() {
-        if (this._busy || !this._state)
+        if (this._busy || !this._state || !presentation(this._state).visible)
             return;
         this._write(this._state.status === 'armed' ? 'default' : 'windows');
     }
@@ -105,14 +113,13 @@ const BootToWindowsToggle = GObject.registerClass({
         if (this._busy)
             return false;
         this._busy = true;
-        // Anything already in flight would report pre-write state.
-        const seq = ++this._seq;
+        // Drop any refresh already in flight: it would report pre-write state.
+        this._seq++;
         this._render();
         try {
             const state = await setNextBoot(target, this._cancellable);
             this._busy = false;
-            if (seq === this._seq)
-                this._setState(state);
+            this._setState(state);
             return true;
         } catch (e) {
             if (this._cancellable.is_cancelled())

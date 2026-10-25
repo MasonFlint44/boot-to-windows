@@ -1,0 +1,6 @@
+{
+  "uuid": "harness@btw.test",
+  "name": "Integration harness (test only)",
+  "description": "Puts the shell in unsafe mode so org.gnome.Shell.Eval works. Never ship.",
+  "shell-version": ["45", "46", "47", "48", "49", "50"]
+}

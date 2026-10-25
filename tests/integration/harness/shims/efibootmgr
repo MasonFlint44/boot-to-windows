@@ -1,0 +1,40 @@
+#!/bin/bash
+# Fake efibootmgr operating on the fixture efivars. Logs argv to
+# $HARNESS_RUN/efibootmgr.log. Supports: (no args) / -v listing, -n/--bootnext XXXX,
+# -N/--delete-bootnext, -o/--bootorder X,Y. Failure knob: $HARNESS_RUN/efibootmgr.mode
+#   ok (default) | fail (exit 1 with an efibootmgr-style error)
+HARNESS_RUN=${HARNESS_RUN:-/run/harness}
+# shellcheck source=../efivars.sh
+. /opt/harness/efivars.sh
+printf '%q ' "$@" | sed 's/ $//' >> "$HARNESS_RUN/efibootmgr.log"; echo >> "$HARNESS_RUN/efibootmgr.log"
+if [ "$(cat "$HARNESS_RUN/efibootmgr.mode" 2>/dev/null)" = fail ]; then
+    echo "Could not set BootNext: Input/output error" >&2; exit 1
+fi
+[ -d "$EFIVARS" ] || { echo "EFI variables are not supported on this system." >&2; exit 2; }
+
+valid_entry() { [[ $1 =~ ^[0-9A-Fa-f]{4}$ ]] && [ -f "$(efivar_path "Boot${1^^}")" ]; }
+
+while [ $# -gt 0 ]; do
+    case $1 in
+        -n|--bootnext)
+            valid_entry "$2" || { echo "Could not set BootNext: No such file or directory" >&2; exit 1; }
+            efivar_write BootNext "$(u16le "$2")"; shift ;;
+        -N|--delete-bootnext) efivar_delete BootNext ;;
+        -o|--bootorder) efivar_write BootOrder "$(u16list_hex "$2")"; shift ;;
+        -v|--verbose|-q|--quiet) ;;
+        *) echo "efibootmgr (fake): unsupported option $1" >&2; exit 1 ;;
+    esac
+    shift
+done
+
+h=$(efivar_data_hex BootCurrent) && echo "BootCurrent: $(hex_u16list "$h")"
+h=$(efivar_data_hex BootNext) && echo "BootNext: $(hex_u16list "$h")"
+h=$(efivar_data_hex Timeout) && echo "Timeout: $((16#${h:2:2}${h:0:2})) seconds"
+h=$(efivar_data_hex BootOrder) && echo "BootOrder: $(hex_u16list "$h")"
+for f in "$EFIVARS"/Boot[0-9A-F][0-9A-F][0-9A-F][0-9A-F]-"$EFI_GUID"; do
+    [ -f "$f" ] || continue
+    n=$(basename "$f"); n=${n:4:4}
+    a=$(efivar_data_hex "Boot$n"); star=' '; [ $((16#${a:0:2} & 1)) = 1 ] && star='*'
+    echo "Boot$n$star $(efivar_boot_desc "$n")"
+done
+exit 0

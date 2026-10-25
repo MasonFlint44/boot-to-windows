@@ -1,0 +1,6 @@
+{
+  "uuid": "broken-probe@btw.test",
+  "name": "Broken Probe",
+  "description": "Negative control: throws in enable().",
+  "shell-version": ["45"]
+}

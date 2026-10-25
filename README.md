@@ -55,18 +55,25 @@ menu, which is why this is safe to allow without a password.
 - A PC booted in UEFI mode with a Windows Boot Manager entry
 - `efibootmgr`
 - GNOME Shell: see `shell-version` in [`metadata.json`](extension/metadata.json).
-  Each listed version is tested by CI in a real headless GNOME Shell.
+  Every listed version (45–50) passes the full integration suite in CI, in a
+  real headless GNOME Shell.
 
 ## Development
 
 ```sh
-npm install            # eslint only; the extension has no runtime deps
+npm install                       # eslint only; the extension has no runtime deps
 npm run lint
-npm test               # unit tests (gjs)
-tests/integration/run.sh 50 extension tests/integration/suite.sh   # real shell in Docker
-./tools/pack.sh        # build/…shell-extension.zip for extensions.gnome.org
-./tools/install-dev.sh # install into your session (Wayland: log out/in after)
+npm test                          # unit tests (gjs)
+tests/integration/test-all.sh     # every suite, real headless GNOME Shell 45-50 in Docker
+tests/integration/test-all.sh 50  # just one version
+./tools/pack.sh                   # build/…shell-extension.zip for extensions.gnome.org
+./tools/install-dev.sh            # install into your session (Wayland: log out/in after)
 ```
+
+The integration suites (`tests/integration/tests/`) drive the real extension
+through GNOME Shell's Eval interface, against fake firmware variables and a
+fake `pkexec`/`efibootmgr`. Nothing touches real NVRAM. See
+[`tests/integration/README.md`](tests/integration/README.md).
 
 Code layout: `extension/lib/` holds pure, GI-free modules (`efivars`,
 `state`, `presentation`, `install`, `trust`, `helperCore`), unit-tested

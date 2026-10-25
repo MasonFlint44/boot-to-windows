@@ -55,6 +55,11 @@ function helperFiles(extPath) {
     }));
 }
 
+/** A row whose text is shown literally (firmware strings are arbitrary). */
+function plainRow(title, subtitle) {
+    return new Adw.ActionRow({title, subtitle, use_markup: false});
+}
+
 function copyButton(text, toastTarget) {
     const button = new Gtk.Button({
         icon_name: 'edit-copy-symbolic',
@@ -70,7 +75,9 @@ function copyButton(text, toastTarget) {
 }
 
 function commandRow(title, command, toastTarget) {
-    const row = new Adw.ActionRow({title, subtitle: command, subtitle_selectable: true});
+    // use_markup off: commands contain '&&', which older libadwaita (GNOME
+    // 45-47) parses as broken markup and renders as an empty row.
+    const row = new Adw.ActionRow({title, subtitle: command, subtitle_selectable: true, use_markup: false});
     row.add_css_class('property');
     row.add_suffix(copyButton(command, toastTarget));
     return row;
@@ -93,16 +100,14 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             'armed': 'Next restart starts Windows',
             'other': `Next restart starts ${entry(state.bootNext)}`,
         }[state.status];
-        firmware.add(new Adw.ActionRow({title: 'Status', subtitle: statusText}));
+        firmware.add(plainRow('Status', statusText));
         if (state.status !== 'unsupported') {
-            firmware.add(new Adw.ActionRow({title: 'Windows entry', subtitle: entry(state.windows)}));
-            firmware.add(new Adw.ActionRow({title: 'Default entry', subtitle: entry(state.defaultEntry)}));
+            firmware.add(plainRow('Windows entry', entry(state.windows)));
+            firmware.add(plainRow('Default entry', entry(state.defaultEntry)));
         }
         const efibootmgr = EFIBOOTMGR_CANDIDATES.find(p => isTrustedInfo(info(p)));
-        firmware.add(new Adw.ActionRow({
-            title: 'efibootmgr',
-            subtitle: efibootmgr ?? 'Not installed. Install the "efibootmgr" package.',
-        }));
+        firmware.add(plainRow('efibootmgr',
+            efibootmgr ?? 'Not installed. Install the "efibootmgr" package.'));
         page.add(firmware);
 
         // One-click helper.
@@ -115,15 +120,12 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
                 'or back at the default, and it is installed root-owned so no ' +
                 'program can change it.',
         });
-        helper.add(new Adw.ActionRow({
-            title: 'Helper',
-            subtitle: {
+        helper.add(plainRow('Helper', {
                 'installed': 'Installed',
                 'outdated': 'Installed, but older than this extension. Run the install command again.',
                 'untrusted': 'Found, but not root-owned. It will not be used. Reinstall it.',
                 'missing': 'Not installed',
-            }[status],
-        }));
+            }[status]));
         if (status !== 'installed')
             helper.add(commandRow('Install or update', installCommand(this.path), window));
         if (status !== 'missing')

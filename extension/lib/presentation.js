@@ -6,30 +6,26 @@ export const ICON = 'system-reboot-symbolic';
 export const NAME = 'Boot to Windows';
 
 /**
- * What the toggle shows for each state. `sensitive: false` greys it out when
- * there is nothing useful to toggle.
+ * What the toggle shows for each state. When there is nothing to switch to
+ * (no UEFI, no Windows entry, or Windows already boots by default) the toggle
+ * is hidden, as GNOME does for e.g. Bluetooth without an adapter; the
+ * settings page explains why.
  */
 export function presentation(state) {
     const def = state.defaultEntry?.description || 'the default system';
     switch (state.status) {
     case 'armed':
-        return {checked: true, sensitive: true, subtitle: 'Next restart',
+        return {visible: true, checked: true, subtitle: 'Next restart',
             header: 'Windows, once', canDisarm: true};
     case 'ready':
-        return {checked: false, sensitive: true, subtitle: null,
+        return {visible: true, checked: false, subtitle: null,
             header: `${def} (as usual)`, canDisarm: false};
-    case 'other':
-        return {checked: false, sensitive: true,
-            subtitle: `Next: ${state.bootNext.description || 'another entry'}`,
-            header: `${state.bootNext.description || 'Another entry'}, once`, canDisarm: true};
-    case 'windows-is-default':
-        return {checked: false, sensitive: false, subtitle: 'Already the default',
-            header: 'Windows is the default system', canDisarm: false};
-    case 'no-windows':
-        return {checked: false, sensitive: false, subtitle: 'No Windows found',
-            header: 'No Windows Boot Manager entry', canDisarm: false};
+    case 'other': {
+        const what = state.bootNext.description || 'another entry';
+        return {visible: true, checked: false, subtitle: `Next: ${what}`,
+            header: `${what}, once`, canDisarm: true};
+    }
     default:
-        return {checked: false, sensitive: false, subtitle: 'Needs UEFI',
-            header: 'This computer did not boot with UEFI', canDisarm: false};
+        return {visible: false, checked: false, subtitle: null, header: '', canDisarm: false};
     }
 }
