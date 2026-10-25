@@ -29,18 +29,23 @@ export function uninstallCommand() {
 }
 
 /**
- * @param {{info: object|null, type: string, same: boolean}[]} files
- *   each installed helper file: its trust info (null = missing), expected
- *   type, and whether its contents match the copy bundled with the extension
+ * @param {{info: object|null, type: string, same: boolean, ancestor?: boolean}[]} files
+ *   each helper file: its trust info (null = missing), expected type, and
+ *   whether its contents match the copy bundled with the extension.
+ *   `ancestor` marks system directories above the install (/usr/local, ...),
+ *   which exist whether or not the helper does.
  * @param {(info: object|null, type: string) => boolean} isTrusted
- * @returns {'missing'|'untrusted'|'outdated'|'installed'}
+ * @returns {'missing'|'untrusted'|'unsafe-parent'|'outdated'|'installed'}
  */
 export function helperStatus(files, isTrusted) {
-    if (files.every(f => f.info === null))
+    const own = files.filter(f => !f.ancestor);
+    if (own.every(f => f.info === null))
         return 'missing';
-    if (!files.every(f => isTrusted(f.info, f.type)))
+    if (!own.every(f => isTrusted(f.info, f.type)))
         return 'untrusted';
-    if (!files.every(f => f.same))
+    if (!files.filter(f => f.ancestor).every(f => isTrusted(f.info, f.type)))
+        return 'unsafe-parent';
+    if (!own.every(f => f.same))
         return 'outdated';
     return 'installed';
 }

@@ -13,7 +13,8 @@ import Gtk from 'gi://Gtk';
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
 import {
-    EFIBOOTMGR_CANDIDATES, HELPER_DIR, HELPER_LIBS, HELPER_PATH, POLICY_PATH,
+    EFIBOOTMGR_CANDIDATES, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
+    POLICY_PATH,
 } from './lib/constants.js';
 import {formatEntry} from './lib/efivars.js';
 import {readSnapshotSync} from './lib/firmware.js';
@@ -47,12 +48,15 @@ function helperFiles(extPath) {
         [POLICY_PATH, `${extPath}/helper/${POLICY_PATH.split('/').pop()}`, 'regular'],
         ...HELPER_LIBS.map(f => [`${HELPER_DIR}/lib/${f}`, `${extPath}/lib/${f}`, 'regular']),
     ];
-    return pairs.map(([installed, bundled, type]) => ({
+    const ancestors = HELPER_ANCESTORS.map(d => ({
+        installed: d, type: 'directory', info: info(d), same: true, ancestor: true,
+    }));
+    return [...ancestors, ...pairs.map(([installed, bundled, type]) => ({
         installed, type,
         info: info(installed),
         same: bundled === null ||
             String(contents(installed)) === String(contents(bundled)),
-    }));
+    }))];
 }
 
 /** A row whose text is shown literally (firmware strings are arbitrary). */
@@ -124,6 +128,7 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
                 'installed': 'Installed',
                 'outdated': 'Installed, but older than this extension. Run the install command again.',
                 'untrusted': 'Found, but not root-owned. It will not be used. Reinstall it.',
+                'unsafe-parent': `Installed, but not used: a folder above ${HELPER_DIR} is writable by non-root users.`,
                 'missing': 'Not installed',
             }[status]));
         if (status !== 'installed')

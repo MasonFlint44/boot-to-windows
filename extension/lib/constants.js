@@ -15,6 +15,12 @@ export const EFIVARS_DIR = '/sys/firmware/efi/efivars';
 export const HELPER_DIR = '/usr/local/libexec/boot-to-windows';
 export const HELPER_PATH = `${HELPER_DIR}/boot-to-windows-helper`;
 
+/**
+ * Directories above HELPER_DIR. If any is writable by non-root users, the
+ * helper directory itself could be swapped out, so the helper isn't used.
+ */
+export const HELPER_ANCESTORS = ['/usr', '/usr/local', '/usr/local/libexec'];
+
 /** Modules the helper imports, installed to HELPER_DIR/lib alongside it. */
 export const HELPER_LIBS = [
     'constants.js', 'efivars.js', 'firmware.js', 'helperCore.js',

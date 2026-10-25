@@ -14,7 +14,8 @@ import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
 import {
-    EFIBOOTMGR_CANDIDATES, HELPER_DIR, HELPER_LIBS, HELPER_PATH, POLICY_PATH,
+    EFIBOOTMGR_CANDIDATES, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
+    POLICY_PATH,
 } from './constants.js';
 import {formatEntry} from './efivars.js';
 import {readSnapshot} from './firmware.js';
@@ -56,6 +57,7 @@ async function fileInfo(path, cancellable) {
 
 /** Files the helper runs or imports; every one must be trusted. */
 export const HELPER_FILES = [
+    ...HELPER_ANCESTORS.map(d => [d, 'directory']),
     [HELPER_DIR, 'directory'],
     [`${HELPER_DIR}/lib`, 'directory'],
     [HELPER_PATH, 'regular'],

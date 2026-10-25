@@ -41,4 +41,9 @@ test('install: helperStatus', () => {
     assert.equal(helperStatus([file(rootDir, true, 'directory'), file(root, false)], isTrustedInfo), 'outdated');
     assert.equal(helperStatus([file(root), file(null)], isTrustedInfo), 'untrusted', 'partial install');
     assert.equal(helperStatus([file(root), file({...root, uid: 1000})], isTrustedInfo), 'untrusted');
+
+    const parent = (mode = 0o40755) => ({info: {uid: 0, mode, type: 'directory'}, same: true, type: 'directory', ancestor: true});
+    assert.equal(helperStatus([parent(), file(null)], isTrustedInfo), 'missing', 'parents exist without a helper');
+    assert.equal(helperStatus([parent(), file(root)], isTrustedInfo), 'installed');
+    assert.equal(helperStatus([parent(0o42775), file(root)], isTrustedInfo), 'unsafe-parent', 'staff-writable /usr/local');
 });
