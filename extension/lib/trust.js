@@ -1,0 +1,34 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Which files are safe for root to execute or load. Pure: callers fetch the
+// file info (Gio, async or sync) and pass in the fields.
+
+/**
+ * A file root may execute or load must be owned by root and writable by no
+ * one else, or a user process could swap in its own code.
+ *
+ * @param {{uid: number, mode: number, type: string}|null} info
+ * @param {'regular'|'directory'} wantType
+ */
+export function isTrustedInfo(info, wantType = 'regular') {
+    if (!info || info.type !== wantType)
+        return false;
+    return info.uid === 0 && (info.mode & 0o022) === 0;
+}
+
+/** Field names to request from Gio.File.query_info. */
+export const TRUST_ATTRIBUTES = 'standard::type,unix::uid,unix::mode';
+
+/**
+ * Convert a Gio.FileInfo to the plain shape isTrustedInfo takes. Takes the
+ * Gio module as an argument so this file stays importable without GI.
+ */
+export function infoFromGio(Gio, info) {
+    const type = info.get_file_type();
+    return {
+        uid: info.get_attribute_uint32('unix::uid'),
+        mode: info.get_attribute_uint32('unix::mode'),
+        type: type === Gio.FileType.DIRECTORY ? 'directory'
+            : type === Gio.FileType.REGULAR ? 'regular' : 'other',
+    };
+}

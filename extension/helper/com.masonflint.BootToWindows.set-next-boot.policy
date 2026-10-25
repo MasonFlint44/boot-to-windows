@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<policyconfig>
+  <vendor>Boot to Windows GNOME extension</vendor>
+  <vendor_url>https://github.com/MasonFlint44/boot-to-windows</vendor_url>
+
+  <action id="com.masonflint.BootToWindows.set-next-boot">
+    <description>Choose whether the next boot goes to Windows</description>
+    <message>Authentication is required to choose which system starts next</message>
+    <defaults>
+      <!-- Someone logged in at this machine may do this without a password.
+           The helper can only point the next boot, once, at the Windows Boot
+           Manager or back at the normal default - nothing else. Anyone at the
+           keyboard could pick the same thing from the firmware boot menu. -->
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/boot-to-windows/boot-to-windows-helper</annotate>
+  </action>
+</policyconfig>
