@@ -48,3 +48,4 @@ jobs:
         with:
           name: gnome-${{ matrix.gnome }}-logs
           path: tests/integration/.work/
+          include-hidden-files: true

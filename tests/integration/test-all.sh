@@ -14,7 +14,12 @@ mkdir -p .work
 run_one() {
     local v=$1 s=${2%%|*} hook=${2#*|} name; name=$(basename "$s" .sh)
     if ROOT_SETUP=$hook STRICT_METADATA=1 OUT_DIR="$PWD/.work/out-$v-$name" ./run.sh "$v" "$EXT" "$s" > ".work/$v-$name.log" 2>&1
-    then echo "PASS  GNOME $v  $name"; else echo "FAIL  GNOME $v  $name  (.work/$v-$name.log)"; return 1; fi
+    then echo "PASS  GNOME $v  $name"
+    else
+        echo "FAIL  GNOME $v  $name  (.work/$v-$name.log)"
+        grep -v '^\[test\] ok' ".work/$v-$name.log" | tail -25 | sed "s/^/    [$v $name] /"
+        return 1
+    fi
 }
 pids=()
 for v in "${versions[@]}"; do
