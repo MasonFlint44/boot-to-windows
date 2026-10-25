@@ -5,6 +5,9 @@
 #
 #   ROOT_SETUP=hooks/install-helper-tampered.sh ./run.sh <ver> ../../extension tests/helper-tampered.sh
 
+# Fail fast if the fake firmware didn't mount: every later step depends on it.
+[ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
+
 NAME='Boot to Windows'
 T=$(qs_toggle_js "$NAME")
 EXT_DIR=$HOME/.local/share/gnome-shell/extensions/$EXT_UUID

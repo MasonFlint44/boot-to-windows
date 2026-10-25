@@ -34,6 +34,7 @@ rm -rf "$out"; mkdir -p "$out"
 # shellcheck disable=SC2054
 args=(--rm --init
       --security-opt systempaths=unconfined          # unmask /sys/firmware ...
+      --security-opt apparmor=unconfined             # docker-default AppArmor denies writes under /sys/firmware/** (Ubuntu hosts, CI)
       --mount type=tmpfs,destination=/sys/firmware   # ... and put a writable tmpfs there for fixture efivars
       -v "$ext:/ext:ro" -v "$out:/out"
       -e LANG=C.UTF-8                                # real sessions are UTF-8; C locale mangles "…" in Eval output

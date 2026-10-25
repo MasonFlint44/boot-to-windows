@@ -9,6 +9,9 @@
 # Default fixture: Boot0000 "ubuntu" (default), Boot0001 "Windows Boot Manager",
 # no BootNext. No helper installed, so writes go to pkexec efibootmgr.
 
+# Fail fast if the fake firmware didn't mount: every later step depends on it.
+[ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
+
 NAME='Boot to Windows'
 T=$(qs_toggle_js "$NAME")
 IND="Main.panel.statusArea.quickSettings._indicators.get_children().find(c => c._toggle?.title === \"$NAME\")"

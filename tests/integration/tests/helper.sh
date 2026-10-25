@@ -9,6 +9,9 @@
 # (The fake pkexec doesn't elevate, so the helper runs as the test user; that
 # is enough to prove the extension calls it, and that it works end to end.)
 
+# Fail fast if the fake firmware didn't mount: every later step depends on it.
+[ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
+
 NAME='Boot to Windows'
 T=$(qs_toggle_js "$NAME")
 HELPER=/usr/local/libexec/boot-to-windows/boot-to-windows-helper
