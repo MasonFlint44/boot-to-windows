@@ -20,10 +20,15 @@ export function isTrustedInfo(info, wantType = 'regular') {
 export const TRUST_ATTRIBUTES = 'standard::type,unix::uid,unix::mode';
 
 /**
- * Convert a Gio.FileInfo to the plain shape isTrustedInfo takes. Takes the
- * Gio module as an argument so this file stays importable without GI.
+ * Convert a Gio.FileInfo to the plain shape isTrustedInfo takes, or null when
+ * the info is empty. Older GLib (2.78/2.80) answers a query for a file in a
+ * directory the user can't search with an empty info rather than an error,
+ * e.g. /usr/share/polkit-1/rules.d on Fedora 39/40. Takes the Gio module as
+ * an argument so this file stays importable without GI.
  */
 export function infoFromGio(Gio, info) {
+    if (!info.has_attribute('standard::type') || !info.has_attribute('unix::uid'))
+        return null;
     const type = info.get_file_type();
     return {
         uid: info.get_attribute_uint32('unix::uid'),

@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: GPL-2.0-or-later
+//
+// Boot to Windows one-click mode. Installed to
+// /usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules.
+//
+// Administrators (sudo/admin/wheel) who are logged in at this machine may
+// point the next boot at Windows, or back at the default, without typing a
+// password. They could do the same from the firmware boot menu, or with
+// sudo. Everyone else, and every remote or inactive session, still needs
+// an administrator password (the action's default).
+polkit.addRule(function (action, subject) {
+    if (action.id !== 'com.masonflint.BootToWindows.set-next-boot')
+        return polkit.Result.NOT_HANDLED;
+    var admin = subject.isInGroup('sudo') || subject.isInGroup('admin') ||
+        subject.isInGroup('wheel');
+    if (subject.local && subject.active && admin)
+        return polkit.Result.YES;
+    return polkit.Result.NOT_HANDLED;
+});

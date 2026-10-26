@@ -9,7 +9,7 @@ cd "$(dirname "$0")" || exit
 EXT=../../extension
 mapfile -t versions < <(if [ $# -gt 0 ]; then printf '%s\n' "$@"; else
     python3 -c 'import json;print("\n".join(json.load(open("../../extension/metadata.json"))["shell-version"]))'; fi)
-suites=("tests/suite.sh|" "tests/helper.sh|hooks/install-helper.sh" "tests/helper-tampered.sh|hooks/install-helper-tampered.sh")
+suites=("tests/suite.sh|" "tests/prefs-buttons.sh|" "tests/helper.sh|hooks/install-helper.sh" "tests/helper-tampered.sh|hooks/install-helper-tampered.sh")
 mkdir -p .work
 run_one() {
     local v=$1 s=${2%%|*} hook=${2#*|} name; name=$(basename "$s" .sh)

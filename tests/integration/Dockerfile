@@ -18,9 +18,11 @@ RUN set -eux; \
     fi; \
     dnf -y install --setopt=install_weak_deps=False \
         gnome-shell dbus-daemon glib2 dconf mesa-dri-drivers \
-        util-linux procps-ng; \
+        util-linux procps-ng sudo; \
     dnf clean all; rm -rf /var/cache/dnf /var/cache/libdnf5 /usr/share/doc /usr/share/man; \
     useradd -m -u 1000 tester; \
+    # Only for the fake pkexec's 'root' mode, which tests opt into.
+    echo 'tester ALL=(root) NOPASSWD: ALL' > /etc/sudoers.d/tester; chmod 440 /etc/sudoers.d/tester; \
     gnome-shell --version
 
 # Shims: pkexec + efibootmgr fakes that log argv and edit the fixture efivars.

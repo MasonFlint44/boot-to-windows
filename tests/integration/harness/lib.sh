@@ -64,6 +64,18 @@ qs_toggle_js() { printf '(%s)[0]' "$(qs_toggles_js "$1")"; }
 shim_reset() { : > "$HARNESS_RUN/pkexec.log"; : > "$HARNESS_RUN/efibootmgr.log"; rm -f "$HARNESS_RUN"/*.mode; }
 pkexec_calls() { cat "$HARNESS_RUN/pkexec.log"; }
 efibootmgr_calls() { cat "$HARNESS_RUN/efibootmgr.log"; }
-pkexec_mode() { echo "$1" > "$HARNESS_RUN/pkexec.mode"; }          # allow|dismiss|deny|slow
+pkexec_mode() { echo "$1" > "$HARNESS_RUN/pkexec.mode"; }          # allow|dismiss|deny|slow|root
 efibootmgr_mode() { echo "$1" > "$HARNESS_RUN/efibootmgr.mode"; }  # ok|fail
 bootnext() { local h; h=$(efivar_data_hex BootNext) && hex_u16list "$h"; }   # "0001" or empty/1
+
+# Build the extension's real prefs page (see tests/prefs-probe.js) and print
+# its rows as JSON. With a button label: click it, wait, print the page after.
+prefs_probe() {
+    WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} \
+    GI_TYPELIB_PATH=/usr/lib64/gnome-shell/girepository-1.0 LD_LIBRARY_PATH=/usr/lib64/gnome-shell \
+        gjs -m /tests/prefs-probe.js "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID" "$@" \
+        2>"$HARNESS_RUN/prefs.err" || fail "prefs probe failed: $(cat "$HARNESS_RUN/prefs.err")"
+    if grep -E 'Gtk-WARNING|Adw-WARNING|-CRITICAL|JS ERROR|JS WARNING' "$HARNESS_RUN/prefs.err" >&2; then
+        fail "the preferences page logged warnings (above)"
+    fi
+}

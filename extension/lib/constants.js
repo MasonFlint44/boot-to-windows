@@ -32,6 +32,17 @@ export const POLKIT_ACTION_ID = 'com.masonflint.BootToWindows.set-next-boot';
 export const POLICY_PATH =
     `/usr/share/polkit-1/actions/${POLKIT_ACTION_ID}.policy`;
 
+/**
+ * Polkit rule granting the action without a password to administrators at
+ * the machine. /usr/share rather than /etc: /etc/polkit-1/rules.d isn't
+ * readable by users, so the extension couldn't check the file.
+ */
+export const RULES_PATH =
+    '/usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules';
+
+/** GSettings schema (extension/schemas/). */
+export const SETTINGS_SCHEMA = 'org.gnome.shell.extensions.boot-to-windows';
+
 /** efibootmgr lives in /usr/bin on Debian/Ubuntu and /usr/sbin elsewhere. */
 export const EFIBOOTMGR_CANDIDATES = [
     '/usr/bin/efibootmgr',

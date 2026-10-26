@@ -3,6 +3,7 @@
 # then runs the command as the calling user. Behaviour knob: $HARNESS_RUN/pkexec.mode
 #   allow (default) | dismiss (exit 126, like closing the auth dialog) | deny (exit 127)
 #   | slow (wait 3s, then allow: lets tests act while a write is in flight)
+#   | root (really run as root via sudo, like an approved prompt)
 HARNESS_RUN=${HARNESS_RUN:-/run/harness}
 printf '%q ' "$@" | sed 's/ $//' >> "$HARNESS_RUN/pkexec.log"; echo >> "$HARNESS_RUN/pkexec.log"
 mode=$(cat "$HARNESS_RUN/pkexec.mode" 2>/dev/null || echo allow)
@@ -10,6 +11,7 @@ case $mode in
     dismiss) echo "Error executing command as another user: Request dismissed" >&2; exit 126 ;;
     deny)    echo "Error executing command as another user: Not authorized" >&2; exit 127 ;;
     slow)    sleep 3 ;;
+    root)    exec sudo -n -- "$@" ;;
 esac
 [ "$1" = --disable-internal-agent ] && shift
 case $1 in

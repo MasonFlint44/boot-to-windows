@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<schemalist>
+  <schema id="org.gnome.shell.extensions.boot-to-windows"
+          path="/org/gnome/shell/extensions/boot-to-windows/">
+    <key name="one-click-offered" type="b">
+      <default>false</default>
+      <summary>One-click mode has been offered</summary>
+      <description>Set after the extension has once suggested one-click mode, so it never asks again.</description>
+    </key>
+  </schema>
+</schemalist>

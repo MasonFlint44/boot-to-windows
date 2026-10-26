@@ -15,9 +15,7 @@
 NAME='Boot to Windows'
 T=$(qs_toggle_js "$NAME")
 HELPER=/usr/local/libexec/boot-to-windows/boot-to-windows-helper
-EXT_DIR=$HOME/.local/share/gnome-shell/extensions/$EXT_UUID
 wait_checked() { wait_until 10 eval "test \"\$(shellctl eval '$T.checked')\" = $1" || fail "checked never became $1"; }
-prefs_rows() { WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} GI_TYPELIB_PATH=/usr/lib64/gnome-shell/girepository-1.0 LD_LIBRARY_PATH=/usr/lib64/gnome-shell gjs -m /tests/prefs-probe.js "$EXT_DIR" 2>"$HARNESS_RUN/prefs.err"; }
 
 log_mark
 
@@ -49,15 +47,19 @@ assert_eq "$rc" 2 "usage exit code"
 assert_contains "$out" "usage" "usage message"
 
 log "5. preferences page builds and reports the install"
-rows=$(prefs_rows) || fail "prefs probe failed: $(cat "$HARNESS_RUN/prefs.err")"
+rows=$(prefs_probe)
 echo "$rows"
 assert_contains "$rows" '"title":"Windows entry","subtitle":"Windows Boot Manager (Boot0001)"' "windows entry row"
 assert_contains "$rows" '"title":"Default entry","subtitle":"ubuntu (Boot0000)"' "default entry row"
-assert_contains "$rows" '"title":"Helper","subtitle":"Installed"' "helper status row"
-assert_contains "$rows" '"title":"Uninstall","subtitle":"sudo rm -rf /usr/local/libexec/boot-to-windows && sudo rm -f' "uninstall command shown"
-case $rows in *'"title":"Install or update"'*) fail "install offered although installed" ;; esac
-pass "no install row when installed"
+assert_contains "$rows" '"title":"One-click status","subtitle":"On. Administrators at this computer switch without a password."' "status row"
+assert_contains "$rows" '"title":"Turn off one-click switching"' "remove offered"
+assert_contains "$rows" '"title":"Remove","subtitle":"sudo rm -rf /usr/local/libexec/boot-to-windows && sudo rm -f' "terminal remove command shown"
+case $rows in *'"title":"Enable one-click switching"'*|*'"title":"Update the helper"'*) fail "install offered although installed" ;; esac
+pass "no enable/update when installed"
 
-log "6. clean logs"
+log "6. no one-click suggestion when the helper did the work"
+assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "not suggested"
+
+log "7. clean logs"
 assert_eq "$(shellctl errors "$EXT_UUID")" "" "GetExtensionErrors empty"
 assert_no_log_errors

@@ -33,22 +33,33 @@ same: the next boot is your usual one, and then the firmware clears it.
 
 ## Password prompts and one-click mode
 
-Out of the box, every change asks for an administrator password. That's
-polkit's standard rule for `pkexec efibootmgr`.
+Out of the box, every change asks for an administrator password: changing
+firmware variables needs root, and polkit guards `pkexec efibootmgr` that way.
+After the first one, the extension offers (once) to set up one-click mode.
 
-For one click, install the optional helper. The extension's settings page
-shows the exact commands, with a copy button. The helper:
+**One-click mode** lets administrators logged in at the computer switch
+without a password, the same way GNOME already lets them restart. Turn it on
+from the extension's settings, under **One-click mode** → **Enable**. That asks
+for an administrator password once. The same steps are shown for a terminal
+under **Use a terminal instead**. It installs:
 
-- is installed **root-owned** to `/usr/local/libexec/boot-to-windows/`, so no
-  user program can change what runs as root. The extension won't use it if
-  any of its files are writable by anyone but root.
-- takes exactly one word, `windows` or `default`, and works out the entry
-  numbers from the firmware itself. It cannot be pointed at anything else.
-- comes with a polkit action that lets the **active local session** run it
-  without a password. Remote or inactive sessions still need admin auth.
+- a small helper, **root-owned**, in `/usr/local/libexec/boot-to-windows/`. It
+  takes exactly one word, `windows` or `default`, and works out the entry
+  numbers from the firmware itself, so it can't be pointed at anything else.
+- a polkit action for the helper. By default it asks for an admin password,
+- plus a polkit rule that skips the password only for members of `sudo`,
+  `admin` or `wheel` who are **logged in at this machine**. Other accounts,
+  and remote or inactive sessions, still need a password.
+
+The extension only uses the helper if it, its modules, its policy and the
+folders above it are root-owned and writable by no one else. Otherwise it
+falls back to the password route. (On distros where users can't read
+`/usr/share/polkit-1/rules.d`, the rule itself can't be checked. That's fine:
+the rule only decides whether to ask for a password.) **Turn off one-click
+switching** in the same place removes everything.
 
 Anyone at the keyboard could make the same choice from the firmware's boot
-menu, which is why this is safe to allow without a password.
+menu. The narrow helper and the admin-only rule keep it at that.
 
 ## Requirements
 

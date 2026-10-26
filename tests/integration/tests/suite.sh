@@ -38,6 +38,13 @@ assert_eq "$(subtitle)" null "no subtitle when nothing is armed"
 assert_eq "$(icon_on)" false "top-bar icon hidden"
 assert_eq "$(shell_eval "$T.menu._headerSubtitle?.text ?? $T.menu._headerSubtitle?.get_text?.()")" '"ubuntu (as usual)"' "menu header names the default"
 
+log "1b. a change that needs no write asks for nothing and suggests nothing"
+shim_reset
+shell_eval "$T._write('default')" >/dev/null; idle
+assert_eq "$(pkexec_calls)" "" "no pkexec"
+assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "no suggestion"
+assert_eq "$(gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/schemas" get org.gnome.shell.extensions.boot-to-windows one-click-offered)" false "not marked as offered"
+
 log "2. click arms Windows through pkexec efibootmgr, verified by re-read"
 shim_reset
 click
@@ -46,6 +53,14 @@ assert_eq "$(bootnext)" 0001 "BootNext = Windows entry"
 assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "pkexec argv"
 assert_eq "$(subtitle)" '"Next restart"' "subtitle"
 assert_eq "$(icon_on)" true "top-bar icon shown while armed"
+NUDGE='Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === "Skip the password next time?")'
+wait_until 5 eval 'test "$(shellctl eval "$NUDGE.length")" = 1' || fail "no one-click suggestion after the first password write"
+pass "one-click suggested once"
+
+log "2b. clicking the suggestion opens the settings; it never comes back"
+shell_eval "(() => { const e = Main.extensionManager.lookup('$EXT_UUID').stateObj; global._btwPrefs = 0; e.openPreferences = () => global._btwPrefs++; })(), null" >/dev/null
+shell_eval "$NUDGE[0].activate()" >/dev/null
+assert_eq "$(shell_eval global._btwPrefs)" 1 "settings opened"
 
 log "3. click again disarms by pointing at the default (no --delete-bootnext)"
 shim_reset
@@ -187,7 +202,9 @@ for i in 1 2 3; do
 done
 assert_eq "$(shell_eval "Main.panel.statusArea.quickSettings._indicators.get_children().filter(c => c._toggle?.title === \"$NAME\").length")" 1 "one indicator"
 
-log "16. clean logs"
+log "16. clean logs, and the suggestion was shown only once"
+assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "no new suggestion after the first (the first was dismissed by activating it)"
+assert_eq "$(gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/schemas" get org.gnome.shell.extensions.boot-to-windows one-click-offered)" true "remembered in settings"
 assert_eq "$(shellctl errors "$EXT_UUID")" "" "GetExtensionErrors empty"
 assert_no_log_errors
 if grep -n "already disposed\|has been already disposed" "$HARNESS_RUN/shell.log"; then
@@ -195,10 +212,10 @@ if grep -n "already disposed\|has been already disposed" "$HARNESS_RUN/shell.log
 fi
 pass "no disposed-object warnings"
 
-log "17. preferences page without the helper offers the install command"
-rows=$(WAYLAND_DISPLAY=${WAYLAND_DISPLAY:-wayland-0} GI_TYPELIB_PATH=/usr/lib64/gnome-shell/girepository-1.0 LD_LIBRARY_PATH=/usr/lib64/gnome-shell \
-    gjs -m /tests/prefs-probe.js "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID") || fail "prefs probe failed"
-assert_contains "$rows" '"title":"Helper","subtitle":"Not installed"' "helper status"
-assert_contains "$rows" '"title":"Install or update","subtitle":"sudo install -d' "install command shown"
-case $rows in *'"title":"Uninstall"'*) fail "uninstall offered with nothing installed" ;; esac
-pass "no uninstall row"
+log "17. preferences page without the helper offers to enable it"
+rows=$(prefs_probe)
+assert_contains "$rows" '"title":"One-click status","subtitle":"Off. Each change asks for an administrator password."' "status"
+assert_contains "$rows" '"title":"Enable one-click switching"' "enable offered"
+assert_contains "$rows" '"title":"Install or update","subtitle":"sudo install -d' "terminal command shown"
+case $rows in *'"title":"Turn off one-click switching"'*) fail "remove offered with nothing installed" ;; esac
+pass "no remove button"

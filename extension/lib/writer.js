@@ -13,11 +13,9 @@
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 
-import {
-    EFIBOOTMGR_CANDIDATES, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
-    POLICY_PATH,
-} from './constants.js';
+import {EFIBOOTMGR_CANDIDATES, HELPER_PATH} from './constants.js';
 import {formatEntry} from './efivars.js';
+import {HELPER_MANIFEST, mustTrust} from './install.js';
 import {readSnapshot} from './firmware.js';
 import {deriveState, reached, targetEntry} from './state.js';
 import {TRUST_ATTRIBUTES, infoFromGio, isTrustedInfo} from './trust.js';
@@ -55,21 +53,14 @@ async function fileInfo(path, cancellable) {
     }
 }
 
-/** Files the helper runs or imports; every one must be trusted. */
-export const HELPER_FILES = [
-    ...HELPER_ANCESTORS.map(d => [d, 'directory']),
-    [HELPER_DIR, 'directory'],
-    [`${HELPER_DIR}/lib`, 'directory'],
-    [HELPER_PATH, 'regular'],
-    ...HELPER_LIBS.map(f => [`${HELPER_DIR}/lib/${f}`, 'regular']),
-    [POLICY_PATH, 'regular'],
-];
-
 /** Is the one-click helper installed and safe to hand to pkexec? */
 export async function helperInstalled(cancellable = null) {
+    // Every file it runs or loads, its policy and rule, and the directories
+    // above it must be root-owned and writable by no one else.
     const infos = await Promise.all(
-        HELPER_FILES.map(([p]) => fileInfo(p, cancellable)));
-    return infos.every((info, i) => isTrustedInfo(info, HELPER_FILES[i][1]));
+        HELPER_MANIFEST.map(f => fileInfo(f.installed, cancellable)));
+    return infos.every((info, i) => !mustTrust(HELPER_MANIFEST[i], info) ||
+        isTrustedInfo(info, HELPER_MANIFEST[i].type));
 }
 
 /** First root-owned efibootmgr, or null. */
@@ -129,7 +120,8 @@ async function run(argv, cancellable) {
 
 /**
  * Point the next boot at Windows ('windows') or the normal default
- * ('default'), then return the state the firmware actually reports.
+ * ('default'). Resolves to the state the firmware actually reports, and the
+ * route taken: 'none' (already there), 'helper' (one-click) or 'password'.
  *
  * @param {'windows'|'default'} target
  * @param {Gio.Cancellable|null} cancellable
@@ -137,7 +129,7 @@ async function run(argv, cancellable) {
 export async function setNextBoot(target, cancellable = null) {
     const before = deriveState(await readSnapshot(cancellable));
     if (reached(before, target))
-        return before;
+        return {state: before, route: 'none'};
 
     const [helper, efibootmgr] = await Promise.all([
         helperInstalled(cancellable), findEfibootmgr(cancellable),
@@ -150,5 +142,5 @@ export async function setNextBoot(target, cancellable = null) {
             ? 'The firmware did not accept Windows as the next boot'
             : 'The firmware did not accept the default as the next boot');
     }
-    return after;
+    return {state: after, route: helper ? 'helper' : 'password'};
 }

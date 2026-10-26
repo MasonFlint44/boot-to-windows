@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Preferences: what the firmware looks like, and the optional one-click
-// helper. Installing the helper is left to the user (copy a command into a
-// terminal); the extension never runs anything as root on its own.
+// helper. Setting the helper up is always the user's explicit choice: a
+// button that runs one approved pkexec command, or the same steps typed into
+// a terminal.
 
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
@@ -12,15 +13,18 @@ import Gtk from 'gi://Gtk';
 
 import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-import {
-    EFIBOOTMGR_CANDIDATES, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
-    POLICY_PATH,
-} from './lib/constants.js';
+import {EFIBOOTMGR_CANDIDATES, HELPER_DIR} from './lib/constants.js';
 import {formatEntry} from './lib/efivars.js';
 import {readSnapshotSync} from './lib/firmware.js';
-import {helperStatus, installCommand, uninstallCommand} from './lib/install.js';
+import {
+    HELPER_MANIFEST, asPkexecArgv, helperStatus, installCommand, installSteps,
+    uninstallCommand, uninstallSteps,
+} from './lib/install.js';
 import {deriveState} from './lib/state.js';
 import {TRUST_ATTRIBUTES, infoFromGio, isTrustedInfo} from './lib/trust.js';
+import {DismissedError, interpretExit} from './lib/writer.js';
+
+Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 
 function info(path) {
     try {
@@ -39,29 +43,39 @@ function contents(path) {
     }
 }
 
-/** Installed and bundled helper files, for comparing. */
-function helperFiles(extPath) {
-    const pairs = [
-        [HELPER_DIR, null, 'directory'],
-        [`${HELPER_DIR}/lib`, null, 'directory'],
-        [HELPER_PATH, `${extPath}/helper/boot-to-windows-helper`, 'regular'],
-        [POLICY_PATH, `${extPath}/helper/${POLICY_PATH.split('/').pop()}`, 'regular'],
-        ...HELPER_LIBS.map(f => [`${HELPER_DIR}/lib/${f}`, `${extPath}/lib/${f}`, 'regular']),
-    ];
-    const ancestors = HELPER_ANCESTORS.map(d => ({
-        installed: d, type: 'directory', info: info(d), same: true, ancestor: true,
-    }));
-    return [...ancestors, ...pairs.map(([installed, bundled, type]) => ({
-        installed, type,
-        info: info(installed),
-        same: bundled === null ||
-            String(contents(installed)) === String(contents(bundled)),
-    }))];
+function sameBytes(a, b) {
+    return a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
-/** A row whose text is shown literally (firmware strings are arbitrary). */
+/** HELPER_MANIFEST with what's on disk now. */
+function helperFiles(extPath) {
+    return HELPER_MANIFEST.map(f => ({
+        ...f,
+        info: info(f.installed),
+        same: f.source === null ||
+            sameBytes(contents(f.installed), contents(`${extPath}/${f.source}`)),
+    }));
+}
+
+const STATUS_TEXT = {
+    'installed': 'On. Administrators at this computer switch without a password.',
+    'outdated': 'On, but older than this extension. Update it.',
+    'untrusted': 'Found, but not safely installed (not root-owned), so it is not used. Reinstall it.',
+    'unsafe-parent': `Installed, but not used: a folder above ${HELPER_DIR} is writable by non-root users.`,
+    'missing': 'Off. Each change asks for an administrator password.',
+};
+
+/**
+ * A row whose text is shown literally (firmware strings and commands are
+ * arbitrary). Markup goes off before any text is set: construct properties
+ * have no order, and text parsed as markup first logs warnings (and renders
+ * empty on GNOME 45-47 when it contains '&').
+ */
 function plainRow(title, subtitle) {
-    return new Adw.ActionRow({title, subtitle, use_markup: false});
+    const row = new Adw.ActionRow({use_markup: false});
+    row.title = title;
+    row.subtitle = subtitle;
+    return row;
 }
 
 function copyButton(text, toastTarget) {
@@ -79,22 +93,35 @@ function copyButton(text, toastTarget) {
 }
 
 function commandRow(title, command, toastTarget) {
-    // use_markup off: commands contain '&&', which older libadwaita (GNOME
-    // 45-47) parses as broken markup and renders as an empty row.
-    const row = new Adw.ActionRow({title, subtitle: command, subtitle_selectable: true, use_markup: false});
+    const row = plainRow(title, command);
+    row.subtitle_selectable = true;
     row.add_css_class('property');
     row.add_suffix(copyButton(command, toastTarget));
     return row;
+}
+
+/** Run a root job through one pkexec prompt. Resolves null or an Error. */
+async function runAsRoot(steps) {
+    const proc = Gio.Subprocess.new(asPkexecArgv(steps),
+        Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE);
+    const [, stderr] = await proc.communicate_utf8_async(null, null);
+    return interpretExit(proc.get_exit_status(), stderr);
 }
 
 export default class BootToWindowsPreferences extends ExtensionPreferences {
     fillPreferencesWindow(window) {
         const page = new Adw.PreferencesPage();
         window.add(page);
+        page.add(this._firmwareGroup());
+        this._page = page;
+        this._window = window;
+        this._helperGroupWidget = null;
+        this._renderHelperGroup();
+    }
 
-        // Firmware.
+    _firmwareGroup() {
         const state = deriveState(readSnapshotSync());
-        const firmware = new Adw.PreferencesGroup({title: 'Firmware'});
+        const group = new Adw.PreferencesGroup({title: 'Firmware'});
         const entry = e => (e ? `${e.description} (Boot${formatEntry(e.num)})` : 'None');
         const statusText = {
             'unsupported': 'This computer did not start in UEFI mode',
@@ -104,37 +131,70 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             'armed': 'Next restart starts Windows',
             'other': `Next restart starts ${entry(state.bootNext)}`,
         }[state.status];
-        firmware.add(plainRow('Status', statusText));
+        group.add(plainRow('Status', statusText));
         if (state.status !== 'unsupported') {
-            firmware.add(plainRow('Windows entry', entry(state.windows)));
-            firmware.add(plainRow('Default entry', entry(state.defaultEntry)));
+            group.add(plainRow('Windows entry', entry(state.windows)));
+            group.add(plainRow('Default entry', entry(state.defaultEntry)));
         }
         const efibootmgr = EFIBOOTMGR_CANDIDATES.find(p => isTrustedInfo(info(p)));
-        firmware.add(plainRow('efibootmgr',
+        group.add(plainRow('efibootmgr',
             efibootmgr ?? 'Not installed. Install the "efibootmgr" package.'));
-        page.add(firmware);
+        return group;
+    }
 
-        // One-click helper.
+    /** (Re)build the one-click group from what's on disk now. */
+    _renderHelperGroup() {
+        if (this._helperGroupWidget)
+            this._page.remove(this._helperGroupWidget);
+
         const status = helperStatus(helperFiles(this.path), isTrustedInfo);
-        const helper = new Adw.PreferencesGroup({
+        const group = new Adw.PreferencesGroup({
             title: 'One-click mode',
-            description: 'Without the helper, each change asks for an administrator ' +
-                'password. The helper lets whoever is logged in at this computer ' +
-                'switch without one. It can only point the next boot at Windows ' +
-                'or back at the default, and it is installed root-owned so no ' +
-                'program can change it.',
+            description: 'Lets administrators logged in at this computer switch ' +
+                'without typing a password. It installs a small helper that can ' +
+                'only point the next boot at Windows or back at the default. ' +
+                'Setting it up asks for an administrator password once.',
         });
-        helper.add(plainRow('Helper', {
-                'installed': 'Installed',
-                'outdated': 'Installed, but older than this extension. Run the install command again.',
-                'untrusted': 'Found, but not root-owned. It will not be used. Reinstall it.',
-                'unsafe-parent': `Installed, but not used: a folder above ${HELPER_DIR} is writable by non-root users.`,
-                'missing': 'Not installed',
-            }[status]));
-        if (status !== 'installed')
-            helper.add(commandRow('Install or update', installCommand(this.path), window));
-        if (status !== 'missing')
-            helper.add(commandRow('Uninstall', uninstallCommand(), window));
-        page.add(helper);
+        group.add(plainRow('One-click status', STATUS_TEXT[status]));
+
+        const action = (title, subtitle, label, steps, style) => {
+            const row = plainRow(title, subtitle);
+            const button = new Gtk.Button({label, valign: Gtk.Align.CENTER, css_classes: [style]});
+            button.connect('clicked', () => this._run(button, steps));
+            row.add_suffix(button);
+            row.activatable_widget = button;
+            group.add(row);
+        };
+        if (status === 'missing') {
+            action('Enable one-click switching', 'Asks for an administrator password once',
+                'Enable', installSteps(this.path), 'suggested-action');
+        } else if (status !== 'installed') {
+            action('Update the helper', 'Reinstalls it from this version of the extension',
+                'Update', installSteps(this.path), 'suggested-action');
+        }
+        if (status !== 'missing') {
+            action('Turn off one-click switching', 'Removes the helper; changes ask for a password again',
+                'Remove', uninstallSteps(), 'destructive-action');
+        }
+
+        const terminal = new Adw.ExpanderRow({
+            title: 'Use a terminal instead',
+            subtitle: 'The same steps, to run with sudo',
+        });
+        terminal.add_row(commandRow('Install or update', installCommand(this.path), this._window));
+        terminal.add_row(commandRow('Remove', uninstallCommand(), this._window));
+        group.add(terminal);
+
+        this._page.add(group);
+        this._helperGroupWidget = group;
+    }
+
+    async _run(button, steps) {
+        button.sensitive = false;
+        button.label = 'Waiting…';
+        const err = await runAsRoot(steps);
+        if (err && !(err instanceof DismissedError))
+            this._window.add_toast(new Adw.Toast({title: err.message, timeout: 0}));
+        this._renderHelperGroup();
     }
 }

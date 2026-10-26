@@ -11,13 +11,12 @@
     <description>Choose whether the next boot goes to Windows</description>
     <message>Authentication is required to choose which system starts next</message>
     <defaults>
-      <!-- Someone logged in at this machine may do this without a password.
-           The helper can only point the next boot, once, at the Windows Boot
-           Manager or back at the normal default - nothing else. Anyone at the
-           keyboard could pick the same thing from the firmware boot menu. -->
+      <!-- Everyone needs an administrator password by default. The companion
+           rule (50-com.masonflint.BootToWindows.rules) lets administrators
+           logged in at this machine skip it. -->
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
-      <allow_active>yes</allow_active>
+      <allow_active>auth_admin</allow_active>
     </defaults>
     <annotate key="org.freedesktop.policykit.exec.path">/usr/local/libexec/boot-to-windows/boot-to-windows-helper</annotate>
   </action>

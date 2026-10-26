@@ -13,6 +13,7 @@ import {QuickMenuToggle, SystemIndicator} from 'resource:///org/gnome/shell/ui/q
 import * as SystemActions from 'resource:///org/gnome/shell/misc/systemActions.js';
 
 import {readSnapshot} from './lib/firmware.js';
+import {notifyClickable} from './lib/notify.js';
 import {ICON, NAME, presentation} from './lib/presentation.js';
 import {deriveState} from './lib/state.js';
 import {DismissedError, setNextBoot} from './lib/writer.js';
@@ -117,9 +118,11 @@ const BootToWindowsToggle = GObject.registerClass({
         this._seq++;
         this._render();
         try {
-            const state = await setNextBoot(target, this._cancellable);
+            const {state, route} = await setNextBoot(target, this._cancellable);
             this._busy = false;
             this._setState(state);
+            if (route === 'password')
+                this._offerOneClick();
             return true;
         } catch (e) {
             if (this._cancellable.is_cancelled())
@@ -131,6 +134,17 @@ const BootToWindowsToggle = GObject.registerClass({
             this.refresh();
             return false;
         }
+    }
+
+    /** After the first change that needed a password, suggest one-click mode. Once, ever. */
+    _offerOneClick() {
+        const settings = this._extension.getSettings();
+        if (settings.get_boolean('one-click-offered'))
+            return;
+        settings.set_boolean('one-click-offered', true);
+        notifyClickable('Skip the password next time?',
+            'Boot to Windows can switch with one click. Click here to set it up in its settings.',
+            () => this._extension.openPreferences());
     }
 
     async _restartToWindows() {
