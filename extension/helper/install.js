@@ -6,8 +6,8 @@
 //   sudo gjs -m <extension dir>/helper/install.js          install or update
 //   sudo gjs -m <extension dir>/helper/install.js remove   remove
 //
-// The settings page's buttons run this same script through pkexec. The steps
-// themselves are in lib/install.js.
+// The steps are in lib/install.js; the settings page's buttons run the same
+// ones.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';

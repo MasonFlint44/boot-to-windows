@@ -2,8 +2,7 @@
 //
 // Preferences: what the firmware looks like, and the optional one-click
 // helper. Setting the helper up is always the user's explicit choice: a
-// button that runs the bundled installer through one pkexec prompt, or the
-// same installer typed into a terminal.
+// button (one pkexec prompt), or a sudo command for a terminal.
 
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
@@ -15,8 +14,11 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 
 import {EFIBOOTMGR_CANDIDATES, HELPER_DIR, IMAGE_BASED_MARKER} from './lib/constants.js';
 import {formatEntry} from './lib/efivars.js';
-import {readSnapshotSync} from './lib/firmware.js';
-import {HELPER_MANIFEST, helperStatus, pkexecCommand, terminalCommand} from './lib/install.js';
+import {readSnapshot} from './lib/firmware.js';
+import {
+    HELPER_MANIFEST, asPkexecArgv, helperStatus, installSteps, terminalCommand,
+    uninstallSteps,
+} from './lib/install.js';
 import {deriveState, reached} from './lib/state.js';
 import {isTrustedInfo, queryTrustInfo} from './lib/trust.js';
 import {DismissedError, runPrivileged, setNextBoot} from './lib/writer.js';
@@ -106,14 +108,28 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         this._page = new Adw.PreferencesPage();
         this._groups = [];
         window.add(this._page);
-        this._render();
+        window.connect('close-request', () => {
+            this._window = null;
+            this._page = null;
+            this._groups = [];
+            return false;
+        });
+        return this._render();
     }
 
     /** (Re)build the page from what's on disk now. */
-    _render() {
+    async _render() {
+        let snapshot = null, error = null;
+        try {
+            snapshot = await readSnapshot();
+        } catch (e) {
+            error = e;
+        }
+        if (!this._page)
+            return; // the window was closed meanwhile
         for (const g of this._groups)
             this._page.remove(g);
-        this._groups = [this._firmwareGroup(), this._helperGroup()];
+        this._groups = [this._firmwareGroup(snapshot, error), this._helperGroup()];
         for (const g of this._groups)
             this._page.add(g);
     }
@@ -126,7 +142,7 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             await job();
         } catch (e) {
             if (!(e instanceof DismissedError))
-                this._window.add_toast(plainToast(e.message, 0));
+                this._window?.add_toast(plainToast(e.message, 0));
         } finally {
             this._render();
         }
@@ -140,13 +156,10 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         return row;
     }
 
-    _firmwareGroup() {
+    _firmwareGroup(snapshot, error) {
         const group = new Adw.PreferencesGroup({title: 'Firmware'});
-        let snapshot;
-        try {
-            snapshot = readSnapshotSync();
-        } catch (e) {
-            group.add(plainRow('Status', `Couldn’t read the firmware’s boot settings: ${e.message}`));
+        if (error) {
+            group.add(plainRow('Status', `Couldn’t read the firmware’s boot settings: ${error.message}`));
             return group;
         }
         const state = deriveState(snapshot);
@@ -199,24 +212,24 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         if (imageBased)
             return group;
 
-        const action = (title, subtitle, label, verb, style) => group.add(this._withButton(
+        const action = (title, subtitle, label, steps, style) => group.add(this._withButton(
             plainRow(title, subtitle), label, style,
-            () => runPrivileged(pkexecCommand(this.path, verb))));
+            () => runPrivileged(asPkexecArgv(steps))));
         if (status === 'missing') {
             action('Enable one-click switching', 'Asks for an administrator password once',
-                'Enable', 'install', 'suggested-action');
+                'Enable', installSteps(this.path), 'suggested-action');
         } else if (status !== 'installed') {
             action('Update the helper', 'Reinstalls it from this version of the extension',
-                'Update', 'install', 'suggested-action');
+                'Update', installSteps(this.path), 'suggested-action');
         }
         if (status !== 'missing') {
             action('Turn off one-click switching', 'Removes the helper; changes ask for a password again',
-                'Remove', 'remove', 'destructive-action');
+                'Remove', uninstallSteps(), 'destructive-action');
         }
 
         const terminal = new Adw.ExpanderRow({
             title: 'Use a terminal instead',
-            subtitle: 'The same installer, run with sudo',
+            subtitle: 'The same steps, run with sudo',
         });
         const home = GLib.get_home_dir();
         terminal.add_row(commandRow('Install or update', terminalCommand(this.path, 'install', home), this._window));

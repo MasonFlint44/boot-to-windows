@@ -10,7 +10,7 @@ import {assert, test} from './harness.js';
 import {dualBoot} from './fixtures.js';
 import {EFIVARS_DIR} from '../../extension/lib/constants.js';
 import {varFileName} from '../../extension/lib/efivars.js';
-import {readSnapshot, readSnapshotSync} from '../../extension/lib/firmware.js';
+import {readSnapshot} from '../../extension/lib/firmware.js';
 import {deriveState} from '../../extension/lib/state.js';
 
 function fixtureDir(files) {
@@ -42,13 +42,11 @@ function unreadable(dir, name) {
     Gio.File.new_for_path(`${dir}/${varFileName(name)}`).make_directory(null);
 }
 
-test('firmware: async and sync readers agree on a fixture dir', async () => {
+test('firmware: reads a fixture dir', async () => {
     const dir = fixtureDir(dualBoot({next: 0}));
     try {
         const a = await readSnapshot(null, dir);
-        const s = readSnapshotSync(dir);
         assert.equal(deriveState(a).status, 'armed');
-        assert.equal(deriveState(s), deriveState(a));
         assert.equal(a.problems, []);
         assert.equal([...a.entries.keys()].sort(), [0, 2, 3]);
     } finally {
@@ -76,7 +74,7 @@ test('firmware: an unreadable entry is skipped and reported, not fatal', async (
     const dir = fixtureDir(files);
     unreadable(dir, 'Boot0003');
     try {
-        for (const snap of [await readSnapshot(null, dir), readSnapshotSync(dir)]) {
+        for (const snap of [await readSnapshot(null, dir)]) {
             assert.equal(deriveState(snap).status, 'armed', 'the rest still reads');
             assert.ok(!snap.entries.has(3));
             assert.equal(snap.problems.length, 1);
@@ -96,7 +94,6 @@ test('firmware: an unreadable BootNext or BootOrder still fails the read', async
         try {
             // eslint-disable-next-line no-await-in-loop
             await assert.rejects(readSnapshot(null, dir), /./, name);
-            assert.throws(() => readSnapshotSync(dir), /./, name);
         } finally {
             rmrf(dir);
         }
@@ -106,7 +103,6 @@ test('firmware: an unreadable BootNext or BootOrder still fails the read', async
 test('firmware: missing efivars dir means not EFI', async () => {
     const snap = await readSnapshot(null, '/nonexistent/efivars');
     assert.equal(snap.efi, false);
-    assert.equal(readSnapshotSync('/nonexistent/efivars').efi, false);
 });
 
 test('firmware: cancellation rejects', async () => {

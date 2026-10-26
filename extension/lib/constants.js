@@ -40,9 +40,6 @@ export const POLICY_PATH =
 export const RULES_PATH =
     '/usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules';
 
-/** GSettings schema (extension/schemas/). */
-export const SETTINGS_SCHEMA = 'org.gnome.shell.extensions.boot-to-windows';
-
 /** efibootmgr lives in /usr/bin on Debian/Ubuntu and /usr/sbin elsewhere. */
 export const EFIBOOTMGR_CANDIDATES = [
     '/usr/bin/efibootmgr',
@@ -58,9 +55,6 @@ export const EFIBOOTMGR_CANDIDATES = [
  * remove or change these two.
  */
 export const HELPER_VERBS = Object.freeze(['windows', 'default']);
-
-/** gjs, which runs the helper and the installer. */
-export const GJS_PATH = '/usr/bin/gjs';
 
 /**
  * Present on image-based (OSTree) systems such as Fedora Silverblue, where

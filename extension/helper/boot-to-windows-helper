@@ -10,10 +10,11 @@
 // Prints the resulting state as reported by the firmware.
 
 import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
 import System from 'system';
 
 import {EFIBOOTMGR_CANDIDATES} from './lib/constants.js';
-import {readSnapshotSync} from './lib/firmware.js';
+import {readSnapshot} from './lib/firmware.js';
 import {helperMain} from './lib/helperCore.js';
 import {isTrustedInfo, queryTrustInfo} from './lib/trust.js';
 
@@ -28,14 +29,21 @@ function run(argv) {
     return {status: proc.get_exit_status(), stderr: stderr ?? ''};
 }
 
-const result = helperMain({
+const loop = new GLib.MainLoop(null, false);
+let code = 1;
+helperMain({
     args: ARGV,
-    readSnapshot: () => readSnapshotSync(),
+    readSnapshot: () => readSnapshot(),
     run,
     efibootmgr: trustedEfibootmgr(),
-});
-if (result.out)
-    print(result.out);
-if (result.err)
-    printerr(`boot-to-windows-helper: ${result.err}`);
-System.exit(result.code);
+}).then(result => {
+    if (result.out)
+        print(result.out);
+    if (result.err)
+        printerr(`boot-to-windows-helper: ${result.err}`);
+    code = result.code;
+}).catch(e => {
+    printerr(`boot-to-windows-helper: ${e.message}`);
+}).finally(() => loop.quit());
+loop.run();
+System.exit(code);

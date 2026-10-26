@@ -82,37 +82,3 @@ export async function readSnapshot(cancellable = null, dir = EFIVARS_DIR) {
 
     return snapshotFromFiles(true, files, problems);
 }
-
-/** Blocking variant for the helper (no main loop) and the settings page. */
-export function readSnapshotSync(dir = EFIVARS_DIR) {
-    const folder = Gio.File.new_for_path(dir);
-    let enumerator;
-    try {
-        enumerator = folder.enumerate_children(
-            'standard::name', Gio.FileQueryInfoFlags.NONE, null);
-    } catch (e) {
-        if (isIOError(e, Gio.IOErrorEnum.NOT_FOUND))
-            return snapshotFromFiles(false, new Map());
-        throw e;
-    }
-
-    const files = new Map();
-    const problems = [];
-    try {
-        let info;
-        while ((info = enumerator.next_file(null)) !== null) {
-            const name = info.get_name();
-            if (!isRelevantVar(name))
-                continue;
-            try {
-                const [, bytes] = folder.get_child(name).load_contents(null);
-                files.set(name, bytes);
-            } catch (e) {
-                readFailed(name, e, problems);
-            }
-        }
-    } finally {
-        enumerator.close(null);
-    }
-    return snapshotFromFiles(true, files, problems);
-}

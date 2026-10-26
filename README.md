@@ -57,7 +57,7 @@ After the first one, the extension offers (once) to set up one-click mode.
 without a password, the same way GNOME already lets them restart. Turn it on
 from the extension's settings, under **One-click mode** → **Enable**. That asks
 for an administrator password once. **Use a terminal instead** shows the
-same installer as one `sudo` command:
+same steps as one `sudo` command:
 
 ```sh
 sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js          # install or update

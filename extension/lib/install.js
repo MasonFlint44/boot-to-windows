@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Installing the optional one-click helper: which files go where, the
-// commands that do it (one list of steps, run by helper/install.js, which the
-// settings page's button starts through pkexec and the terminal command
-// through sudo), and how an existing install is judged. Pure: no GI imports.
+// commands that do it, and how an existing install is judged. The settings
+// page runs the steps in a root shell (asPkexecArgv); the terminal command
+// runs them through helper/install.js. Pure: no GI imports.
 
 import {
-    GJS_PATH, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
-    POLICY_PATH, RULES_PATH,
+    HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH, POLICY_PATH,
+    RULES_PATH,
 } from './constants.js';
 import {MISSING, isTrustedInfo} from './trust.js';
 
@@ -73,9 +73,13 @@ export function terminalCommand(extPath, verb = 'install', home = null) {
     return `sudo gjs -m ${script}${verb === 'remove' ? ' remove' : ''}`;
 }
 
-/** For the settings page's button: the same installer, through one pkexec prompt. */
-export function pkexecCommand(extPath, verb = 'install') {
-    return ['pkexec', GJS_PATH, '-m', installerPath(extPath), verb];
+/**
+ * For the settings page's buttons: the steps in one root shell, so one
+ * password prompt. Root only runs root-owned programs (sh, install, rm); the
+ * extension's own files are just copied, and become root-owned as they are.
+ */
+export function asPkexecArgv(steps) {
+    return ['pkexec', '/bin/sh', '-c', steps.join(' && ')];
 }
 
 /**

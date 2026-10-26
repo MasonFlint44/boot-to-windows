@@ -27,7 +27,7 @@ log "1. dismissing the password prompt installs nothing"
 shim_reset; pkexec_mode dismiss
 rows=$(prefs_probe Enable)
 assert_contains "$rows" '"title":"One-click status","subtitle":"Off.' "still off"
-assert_eq "$(pkexec_calls)" "/usr/bin/gjs -m $INSTALLER install" "one pkexec of the bundled installer"
+assert_eq "$(pkexec_calls | cut -c1-20)" "/bin/sh -c install\\ " "one pkexec of a root shell for the whole job"
 ! rexists "$HELPER" || fail "helper installed despite dismissal"
 pass "nothing installed"
 case $rows in *'"toast"'*) fail "a dismissed prompt is not an error: $rows" ;; esac

@@ -6,7 +6,7 @@ import {assert, test} from './harness.js';
 import {HELPER_LIBS, HELPER_VERBS, POLKIT_ACTION_ID, RULES_PATH} from '../../extension/lib/constants.js';
 import {
     HELPER_MANIFEST, helperStatus, helperUsable, installSteps, mustTrust,
-    pkexecCommand, shellQuote, terminalCommand, uninstallSteps,
+    asPkexecArgv, shellQuote, terminalCommand, uninstallSteps,
 } from '../../extension/lib/install.js';
 import {MISSING} from '../../extension/lib/trust.js';
 
@@ -41,11 +41,14 @@ test('install: every bundled source file exists in the extension', () => {
         assert.ok(GLib.file_test(`${repo}/extension/${f.source}`, GLib.FileTest.EXISTS), f.source);
 });
 
-test('install: the button runs the bundled installer through one pkexec prompt', () => {
-    assert.equal(pkexecCommand(EXT, 'install'), ['pkexec', '/usr/bin/gjs', '-m', `${EXT}/helper/install.js`, 'install']);
-    assert.equal(pkexecCommand(EXT, 'remove'), ['pkexec', '/usr/bin/gjs', '-m', `${EXT}/helper/install.js`, 'remove']);
-    assert.equal(pkexecCommand("/home/o'neil/ext", 'install')[3], "/home/o'neil/ext/helper/install.js",
-        'an argv needs no quoting');
+test('install: the button runs the steps in one root shell', () => {
+    const argv = asPkexecArgv(installSteps(EXT));
+    assert.equal(argv.slice(0, 3), ['pkexec', '/bin/sh', '-c'], 'root-owned shell, one prompt');
+    assert.equal(argv.length, 4, 'the steps are an argument, not a script file');
+    assert.equal(argv[3], installSteps(EXT).join(' && '));
+    for (const program of argv[3].split(' && ').map(step => step.split(' ')[0]))
+        assert.ok(['install', 'rm'].includes(program), `only standard tools run as root: ${program}`);
+    assert.equal(asPkexecArgv(uninstallSteps())[3], uninstallSteps().join(' && '));
 });
 
 test('install: odd extension paths stay quoted in the steps', () => {

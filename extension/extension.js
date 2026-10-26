@@ -18,6 +18,8 @@ import {ICON_FILE, NAME, presentation} from './lib/presentation.js';
 import {deriveState} from './lib/state.js';
 import {DismissedError, setNextBoot} from './lib/writer.js';
 
+const HIDDEN = {visible: false, checked: false, subtitle: null, header: '', canDisarm: false};
+
 const BootToWindowsToggle = GObject.registerClass({
     Signals: {'state-changed': {}},
 }, class BootToWindowsToggle extends QuickMenuToggle {
@@ -25,8 +27,7 @@ const BootToWindowsToggle = GObject.registerClass({
         super._init({
             title: NAME,
             gicon,
-            // `checked` always mirrors what the firmware reports; it is never
-            // flipped optimistically.
+            // `checked` only ever shows what the firmware reports.
             toggleMode: false,
         });
 
@@ -36,8 +37,7 @@ const BootToWindowsToggle = GObject.registerClass({
         this._seq = 0;
         this._busy = false;
         this._state = null;
-
-        this.menu.setHeader(gicon, 'Next Boot');
+        this._suggestion = null;
 
         this._restartItem = this.menu.addAction('Restart to Windows…',
             () => this._restartToWindows());
@@ -47,15 +47,26 @@ const BootToWindowsToggle = GObject.registerClass({
         this.menu.addAction(`${NAME} Settings`,
             () => this._extension.openPreferences());
 
-        this.connect('clicked', () => this._onClicked());
-        this.menu.connect('open-state-changed', (_m, open) => {
+        this._clickedId = this.connect('clicked', () => this._onClicked());
+        this._menuOpenId = this.menu.connect('open-state-changed', (_m, open) => {
             if (open)
                 this.refresh();
         });
-        this.connect('destroy', () => this._cancellable.cancel());
 
         this._render();
         this.refresh();
+    }
+
+    destroy() {
+        this._cancellable.cancel();
+        this.disconnect(this._clickedId);
+        this.menu.disconnect(this._menuOpenId);
+        if (this._suggestion) {
+            this._suggestion.disconnect(this._suggestionId);
+            this._suggestion.destroy();
+            this._suggestion = null;
+        }
+        super.destroy();
     }
 
     get state() {
@@ -72,12 +83,11 @@ const BootToWindowsToggle = GObject.registerClass({
         const seq = ++this._seq;
         try {
             const state = deriveState(await readSnapshot(this._cancellable));
-            if (seq === this._seq)
+            if (seq === this._seq && !this._cancellable.is_cancelled())
                 this._setState(state);
         } catch (e) {
-            if (this._cancellable.is_cancelled())
-                return;
-            console.error(`${NAME}: reading firmware failed: ${e.message}`);
+            if (!this._cancellable.is_cancelled())
+                console.error(`${NAME}: reading firmware failed: ${e.message}`);
         }
     }
 
@@ -87,18 +97,16 @@ const BootToWindowsToggle = GObject.registerClass({
     }
 
     _render() {
-        // Hidden until the first firmware read lands (a few milliseconds).
-        const p = this._state ? presentation(this._state)
-            : {visible: false, checked: false, subtitle: null, header: '', canDisarm: false};
+        // Hidden until the first firmware read lands.
+        const p = this._state ? presentation(this._state) : HIDDEN;
         this.visible = p.visible;
         this.checked = p.checked;
-        // Also disables the menu arrow, which is fine for a write's duration.
+        // This also disables the menu arrow while a write runs.
         this.reactive = !this._busy;
         this.subtitle = this._busy ? 'Waiting…' : p.subtitle;
         this.menu.setHeader(this._gicon, 'Next Boot', p.header);
 
-        const restart = SystemActions.getDefault().canRestart;
-        this._restartItem.setSensitive(!this._busy && restart);
+        this._restartItem.setSensitive(!this._busy && SystemActions.getDefault().canRestart);
         this._disarmItem.visible = p.canDisarm;
         this._disarmItem.setSensitive(!this._busy);
         this.emit('state-changed');
@@ -115,11 +123,12 @@ const BootToWindowsToggle = GObject.registerClass({
         if (this._busy)
             return false;
         this._busy = true;
-        // Drop any refresh already in flight: it would report pre-write state.
-        this._seq++;
+        this._seq++; // drop a refresh in flight: it would show the old state
         this._render();
         try {
             const {state, route} = await setNextBoot(target, this._cancellable);
+            if (this._cancellable.is_cancelled())
+                return false;
             this._busy = false;
             this._setState(state);
             if (route === 'password')
@@ -137,29 +146,29 @@ const BootToWindowsToggle = GObject.registerClass({
         }
     }
 
-    /** After the first change that needed a password, suggest one-click mode. Once, ever. */
+    /** After the first change that needed a password, suggest one-click mode, once. */
     _offerOneClick() {
         const settings = this._extension.getSettings();
         if (settings.get_boolean('one-click-offered'))
             return;
         try {
-            notifyClickable('Skip the password next time?',
+            this._suggestion = notifyClickable('Skip the password next time?',
                 'Boot to Windows can switch with one click. Click here to set it up in its settings.',
                 () => this._extension.openPreferences());
         } catch (e) {
-            // Not shown, so not marked as offered: it can try again next time.
+            // Not shown, so not marked as offered.
             console.error(`${NAME}: showing the one-click suggestion failed: ${e.message}`);
             return;
         }
+        this._suggestionId = this._suggestion.connect('destroy', () => (this._suggestion = null));
         settings.set_boolean('one-click-offered', true);
     }
 
     async _restartToWindows() {
         if (!await this._write('windows'))
             return;
-        // GNOME's own restart dialog: shows a countdown, warns about unsaved
-        // work, and can be cancelled (Windows then stays armed, as the
-        // indicator shows).
+        // GNOME's own restart dialog, which can still be cancelled; Windows
+        // then stays armed and the top-bar icon shows it.
         try {
             SystemActions.getDefault().activateRestart();
         } catch (e) {
@@ -175,30 +184,30 @@ class BootToWindowsIndicator extends SystemIndicator {
 
         const gicon = Gio.FileIcon.new(Gio.File.new_for_path(`${extension.path}/icons/${ICON_FILE}`));
 
-        // Top-bar icon, shown only while Windows is armed, so a pending
-        // switch is never invisible.
+        // Top-bar icon, only while Windows is armed.
         this._icon = this._addIndicator();
         this._icon.gicon = gicon;
         this._icon.visible = false;
 
         this._toggle = new BootToWindowsToggle(extension, gicon);
-        this._toggle.connect('state-changed',
+        this._stateId = this._toggle.connect('state-changed',
             () => (this._icon.visible = this._toggle.state?.status === 'armed'));
         this.quickSettingsItems.push(this._toggle);
 
-        // Refresh whenever the user opens Quick Settings, in case something
-        // else (efibootmgr, a firmware update) changed BootNext underneath us.
-        const qs = Main.panel.statusArea.quickSettings;
-        this._qsMenuId = qs.menu.connect('open-state-changed', (_m, open) => {
+        // Re-read when Quick Settings opens: another tool may have changed BootNext.
+        this._qsMenu = Main.panel.statusArea.quickSettings.menu;
+        this._qsMenuId = this._qsMenu.connect('open-state-changed', (_m, open) => {
             if (open)
                 this._toggle.refresh();
         });
+    }
 
-        this.connect('destroy', () => {
-            qs.menu.disconnect(this._qsMenuId);
-            this.quickSettingsItems.forEach(item => item.destroy());
-            this.quickSettingsItems = [];
-        });
+    destroy() {
+        this._qsMenu.disconnect(this._qsMenuId);
+        this._toggle.disconnect(this._stateId);
+        this.quickSettingsItems.forEach(item => item.destroy());
+        this.quickSettingsItems = [];
+        super.destroy();
     }
 });
 

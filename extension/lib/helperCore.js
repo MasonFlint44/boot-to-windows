@@ -18,12 +18,12 @@ export const EXIT_FAILED = 1;
 /**
  * @param {object} p
  * @param {string[]} p.args             command-line arguments (no argv[0])
- * @param {() => object} p.readSnapshot firmware reader
+ * @param {() => Promise<object>} p.readSnapshot firmware reader
  * @param {(argv: string[]) => {status: number, stderr: string}} p.run
  * @param {string|null} p.efibootmgr    trusted efibootmgr path
- * @returns {{code: number, out: string, err: string}}
+ * @returns {Promise<{code: number, out: string, err: string}>}
  */
-export function helperMain({args, readSnapshot, run, efibootmgr}) {
+export async function helperMain({args, readSnapshot, run, efibootmgr}) {
     if (args.length !== 1 || !HELPER_VERBS.includes(args[0]))
         return {code: EXIT_USAGE, out: '', err: `usage: boot-to-windows-helper {${HELPER_VERBS.join('|')}}`};
     const target = args[0];
@@ -31,7 +31,7 @@ export function helperMain({args, readSnapshot, run, efibootmgr}) {
     if (!efibootmgr)
         return {code: EXIT_FAILED, out: '', err: 'efibootmgr not found'};
 
-    let state = deriveState(readSnapshot());
+    let state = deriveState(await readSnapshot());
     if (!reached(state, target)) {
         let num;
         try {
@@ -40,7 +40,7 @@ export function helperMain({args, readSnapshot, run, efibootmgr}) {
             return {code: EXIT_FAILED, out: '', err: e.message};
         }
         const res = run([efibootmgr, '--bootnext', formatEntry(num)]);
-        state = deriveState(readSnapshot());
+        state = deriveState(await readSnapshot());
         if (!reached(state, target)) {
             const detail = res.status !== 0 ? `: ${res.stderr.trim()}` : '';
             return {code: EXIT_FAILED, out: '', err: `failed to set next boot (state: ${state.status})${detail}`};

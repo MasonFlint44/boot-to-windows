@@ -55,8 +55,6 @@ async function fileInfo(path, cancellable) {
 
 /** Is the one-click helper installed and safe to hand to pkexec? */
 export async function helperInstalled(cancellable = null) {
-    // Every file it runs or loads, its policy and rule, and the directories
-    // above it must be root-owned and writable by no one else.
     return helperUsable(await Promise.all(
         HELPER_MANIFEST.map(f => fileInfo(f.installed, cancellable))));
 }
@@ -72,7 +70,7 @@ export async function findEfibootmgr(cancellable = null) {
 }
 
 /**
- * The privileged command for a write. Pure, so the choice is unit-testable.
+ * The privileged command for a write.
  *
  * @param {object} p
  * @param {'windows'|'default'} p.target
@@ -89,7 +87,7 @@ export function planCommand({target, state, helper, efibootmgr}) {
     return ['pkexec', efibootmgr, '--bootnext', formatEntry(targetEntry(state, target))];
 }
 
-/** Map a finished pkexec run to an outcome. Pure. */
+/** Map a finished pkexec run to an outcome. */
 export function interpretExit(status, stderr) {
     if (status === 0)
         return null;
