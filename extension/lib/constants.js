@@ -49,5 +49,21 @@ export const EFIBOOTMGR_CANDIDATES = [
     '/usr/sbin/efibootmgr',
 ];
 
-/** Verbs the helper accepts. Anything else is rejected. */
-export const HELPER_VERBS = ['windows', 'default'];
+/**
+ * Verbs the helper accepts. Anything else is rejected.
+ *
+ * This is a stable interface: an extension update doesn't update an
+ * installed helper (that takes the user's password), so a newer extension
+ * must keep working with an older helper. Add verbs if needed, but never
+ * remove or change these two.
+ */
+export const HELPER_VERBS = Object.freeze(['windows', 'default']);
+
+/** gjs, which runs the helper and the installer. */
+export const GJS_PATH = '/usr/bin/gjs';
+
+/**
+ * Present on image-based (OSTree) systems such as Fedora Silverblue, where
+ * /usr is read-only and the helper's polkit files can't be installed.
+ */
+export const IMAGE_BASED_MARKER = '/run/ostree-booted';

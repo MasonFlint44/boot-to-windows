@@ -15,10 +15,10 @@ import GLib from 'gi://GLib';
 
 import {EFIBOOTMGR_CANDIDATES, HELPER_PATH} from './constants.js';
 import {formatEntry} from './efivars.js';
-import {HELPER_MANIFEST, mustTrust} from './install.js';
+import {HELPER_MANIFEST, helperUsable} from './install.js';
 import {readSnapshot} from './firmware.js';
 import {deriveState, reached, targetEntry} from './state.js';
-import {TRUST_ATTRIBUTES, infoFromGio, isTrustedInfo} from './trust.js';
+import {TRUST_ATTRIBUTES, infoFromError, infoFromGio, isTrustedInfo} from './trust.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 Gio._promisify(Gio.File.prototype, 'query_info_async');
@@ -48,8 +48,8 @@ async function fileInfo(path, cancellable) {
             TRUST_ATTRIBUTES, Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS,
             GLib.PRIORITY_DEFAULT, cancellable);
         return infoFromGio(Gio, info);
-    } catch {
-        return null;
+    } catch (e) {
+        return infoFromError(Gio, e);
     }
 }
 
@@ -57,10 +57,8 @@ async function fileInfo(path, cancellable) {
 export async function helperInstalled(cancellable = null) {
     // Every file it runs or loads, its policy and rule, and the directories
     // above it must be root-owned and writable by no one else.
-    const infos = await Promise.all(
-        HELPER_MANIFEST.map(f => fileInfo(f.installed, cancellable)));
-    return infos.every((info, i) => !mustTrust(HELPER_MANIFEST[i], info) ||
-        isTrustedInfo(info, HELPER_MANIFEST[i].type));
+    return helperUsable(await Promise.all(
+        HELPER_MANIFEST.map(f => fileInfo(f.installed, cancellable))));
 }
 
 /** First root-owned efibootmgr, or null. */
@@ -103,7 +101,12 @@ export function interpretExit(status, stderr) {
     return new WriteError(detail || `command failed with status ${status}`);
 }
 
-async function run(argv, cancellable) {
+/**
+ * Run a pkexec command. Resolves when it succeeded; rejects with
+ * DismissedError or WriteError otherwise. Cancelling kills pkexec while it
+ * is still waiting for a password.
+ */
+export async function runPrivileged(argv, cancellable = null) {
     const proc = Gio.Subprocess.new(argv,
         Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE);
     const onCancel = cancellable?.connect(() => proc.force_exit());
@@ -134,7 +137,7 @@ export async function setNextBoot(target, cancellable = null) {
     const [helper, efibootmgr] = await Promise.all([
         helperInstalled(cancellable), findEfibootmgr(cancellable),
     ]);
-    await run(planCommand({target, state: before, helper, efibootmgr}), cancellable);
+    await runPrivileged(planCommand({target, state: before, helper, efibootmgr}), cancellable);
 
     const after = deriveState(await readSnapshot(cancellable));
     if (!reached(after, target)) {

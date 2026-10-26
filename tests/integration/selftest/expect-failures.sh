@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # eval '…' conditions expand later, on purpose
 # Harness self-test: proves the assertions can fail. Run with selftest/broken-extension:
 #   ./run.sh <major> selftest/broken-extension selftest/expect-failures.sh
 log "broken extension must be ERROR, with errors reported both ways"
@@ -16,7 +17,7 @@ log "Eval must be refused once unsafe mode is off"
 ext_disable harness@btw.test; wait_ext_state harness@btw.test INACTIVE
 out=$(shellctl eval '1+1') && rc=0 || rc=$?
 log "Eval with unsafe_mode=false -> rc=$rc out='$out'"
-[ $rc != 0 ] || fail "Eval succeeded without unsafe mode"
+[ "$rc" != 0 ] || fail "Eval succeeded without unsafe mode"
 pass "Eval gated on unsafe mode"
 ext_enable harness@btw.test; wait_ext_state harness@btw.test ACTIVE
 assert_eq "$(shell_eval '1+1')" 2 "Eval back after re-enabling harness"

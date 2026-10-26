@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # eval '…' conditions expand later, on purpose
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # The one-click helper route, plus the preferences page. Run with the helper

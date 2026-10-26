@@ -145,14 +145,15 @@ export function parseLoadOption(bytes) {
  *
  * @param {boolean} efi  whether the efivars directory exists at all
  * @param {Map<string, Uint8Array>} files  efivarfs file name → contents
+ * @param {string[]} problems  variables that couldn't be read at all
  */
-export function snapshotFromFiles(efi, files) {
-    const snapshot = {efi, bootNext: null, bootOrder: [], entries: new Map(), problems: []};
+export function snapshotFromFiles(efi, files, problems = []) {
+    const snapshot = {efi, bootNext: null, bootOrder: [], entries: new Map(), problems: [...problems]};
     const tryParse = (name, fn) => {
         try {
             return fn(files.get(name));
         } catch (e) {
-            snapshot.problems.push(`${name}: ${e.message}`);
+            snapshot.problems.push(`${name.replace(/-.*/, '')}: ${e.message}`);
             return undefined;
         }
     };

@@ -1,6 +1,6 @@
 {
   "uuid": "broken-probe@btw.test",
   "name": "Broken Probe",
-  "description": "Negative control: throws in enable().",
-  "shell-version": ["45"]
+  "description": "Negative control: throws in enable(). Lists only GNOME 44, so with STRICT_METADATA=1 every tested shell must refuse it as out of date.",
+  "shell-version": ["44"]
 }

@@ -14,29 +14,30 @@ import * as SystemActions from 'resource:///org/gnome/shell/misc/systemActions.j
 
 import {readSnapshot} from './lib/firmware.js';
 import {notifyClickable} from './lib/notify.js';
-import {ICON, NAME, presentation} from './lib/presentation.js';
+import {ICON_FILE, NAME, presentation} from './lib/presentation.js';
 import {deriveState} from './lib/state.js';
 import {DismissedError, setNextBoot} from './lib/writer.js';
 
 const BootToWindowsToggle = GObject.registerClass({
     Signals: {'state-changed': {}},
 }, class BootToWindowsToggle extends QuickMenuToggle {
-    _init(extension) {
+    _init(extension, gicon) {
         super._init({
             title: NAME,
-            iconName: ICON,
+            gicon,
             // `checked` always mirrors what the firmware reports; it is never
             // flipped optimistically.
             toggleMode: false,
         });
 
         this._extension = extension;
+        this._gicon = gicon;
         this._cancellable = new Gio.Cancellable();
         this._seq = 0;
         this._busy = false;
         this._state = null;
 
-        this.menu.setHeader(ICON, 'Next Boot');
+        this.menu.setHeader(gicon, 'Next Boot');
 
         this._restartItem = this.menu.addAction('Restart to Windows…',
             () => this._restartToWindows());
@@ -94,7 +95,7 @@ const BootToWindowsToggle = GObject.registerClass({
         // Also disables the menu arrow, which is fine for a write's duration.
         this.reactive = !this._busy;
         this.subtitle = this._busy ? 'Waiting…' : p.subtitle;
-        this.menu.setHeader(ICON, 'Next Boot', p.header);
+        this.menu.setHeader(this._gicon, 'Next Boot', p.header);
 
         const restart = SystemActions.getDefault().canRestart;
         this._restartItem.setSensitive(!this._busy && restart);
@@ -141,10 +142,16 @@ const BootToWindowsToggle = GObject.registerClass({
         const settings = this._extension.getSettings();
         if (settings.get_boolean('one-click-offered'))
             return;
+        try {
+            notifyClickable('Skip the password next time?',
+                'Boot to Windows can switch with one click. Click here to set it up in its settings.',
+                () => this._extension.openPreferences());
+        } catch (e) {
+            // Not shown, so not marked as offered: it can try again next time.
+            console.error(`${NAME}: showing the one-click suggestion failed: ${e.message}`);
+            return;
+        }
         settings.set_boolean('one-click-offered', true);
-        notifyClickable('Skip the password next time?',
-            'Boot to Windows can switch with one click. Click here to set it up in its settings.',
-            () => this._extension.openPreferences());
     }
 
     async _restartToWindows() {
@@ -166,13 +173,15 @@ class BootToWindowsIndicator extends SystemIndicator {
     _init(extension) {
         super._init();
 
+        const gicon = Gio.FileIcon.new(Gio.File.new_for_path(`${extension.path}/icons/${ICON_FILE}`));
+
         // Top-bar icon, shown only while Windows is armed, so a pending
         // switch is never invisible.
         this._icon = this._addIndicator();
-        this._icon.iconName = ICON;
+        this._icon.gicon = gicon;
         this._icon.visible = false;
 
-        this._toggle = new BootToWindowsToggle(extension);
+        this._toggle = new BootToWindowsToggle(extension, gicon);
         this._toggle.connect('state-changed',
             () => (this._icon.visible = this._toggle.state?.status === 'armed'));
         this.quickSettingsItems.push(this._toggle);

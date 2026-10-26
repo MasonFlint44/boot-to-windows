@@ -9,6 +9,9 @@ every later boot stay the same.
 - **Restart to Windows…** in the toggle's menu arms Windows and opens GNOME's
   usual restart dialog (with its countdown and unsaved-work warning).
 - **Start as usual next time** undoes it.
+- The extension's **settings** show what the firmware will start next. They
+  can also undo a one-time boot that another tool set, even when the toggle
+  is hidden (for example when Windows is already the default).
 
 ## How it works
 
@@ -40,8 +43,15 @@ After the first one, the extension offers (once) to set up one-click mode.
 **One-click mode** lets administrators logged in at the computer switch
 without a password, the same way GNOME already lets them restart. Turn it on
 from the extension's settings, under **One-click mode** → **Enable**. That asks
-for an administrator password once. The same steps are shown for a terminal
-under **Use a terminal instead**. It installs:
+for an administrator password once. **Use a terminal instead** shows the
+same installer as one `sudo` command:
+
+```sh
+sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js          # install or update
+sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove   # remove
+```
+
+It installs:
 
 - a small helper, **root-owned**, in `/usr/local/libexec/boot-to-windows/`. It
   takes exactly one word, `windows` or `default`, and works out the entry
@@ -51,12 +61,31 @@ under **Use a terminal instead**. It installs:
   `admin` or `wheel` who are **logged in at this machine**. Other accounts,
   and remote or inactive sessions, still need a password.
 
-The extension only uses the helper if it, its modules, its policy and the
-folders above it are root-owned and writable by no one else. Otherwise it
-falls back to the password route. (On distros where users can't read
-`/usr/share/polkit-1/rules.d`, the rule itself can't be checked. That's fine:
-the rule only decides whether to ask for a password.) **Turn off one-click
-switching** in the same place removes everything.
+The extension only uses the helper if it, its modules, its policy, its rule
+and the folders above it are root-owned and writable by no one else.
+Otherwise it falls back to the password route. (On distros where users can't
+read `/usr/share/polkit-1/rules.d`, the rule itself can't be checked. That's
+fine: the rule only decides whether to ask for a password.) **Turn off
+one-click switching** in the same place removes everything.
+
+**Before removing the extension, turn one-click mode off.** Removing an
+extension can't run any code, so the helper and its polkit files would stay
+behind. If that already happened, the `remove` command above still works
+with a fresh copy of the extension, or delete them by hand:
+
+```sh
+sudo rm -rf /usr/local/libexec/boot-to-windows
+sudo rm -f /usr/share/polkit-1/actions/com.masonflint.BootToWindows.set-next-boot.policy \
+           /usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules
+```
+
+One-click mode isn't available on image-based systems such as Fedora
+Silverblue, where `/usr` is read-only; there each change asks for a password.
+
+The helper's two words, `windows` and `default`, are a fixed interface:
+updating the extension doesn't update an installed helper (that would take
+your password), so every later version keeps working with it. The settings
+page offers **Update** when the installed copy is older.
 
 Anyone at the keyboard could make the same choice from the firmware's boot
 menu. The narrow helper and the admin-only rule keep it at that.
@@ -75,7 +104,7 @@ menu. The narrow helper and the admin-only rule keep it at that.
 npm install                       # eslint only; the extension has no runtime deps
 npm run lint
 npm test                          # unit tests (gjs)
-tests/integration/test-all.sh     # every suite, real headless GNOME Shell 45-50 in Docker
+tests/integration/test-all.sh     # every suite + harness self-tests, real headless GNOME Shell 45-50 in Docker
 tests/integration/test-all.sh 50  # just one version
 ./tools/pack.sh                   # build/…shell-extension.zip for extensions.gnome.org
 ./tools/install-dev.sh            # install into your session (Wayland: log out/in after)

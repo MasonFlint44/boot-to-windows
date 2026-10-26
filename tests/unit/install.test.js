@@ -3,12 +3,12 @@
 import GLib from 'gi://GLib';
 
 import {assert, test} from './harness.js';
-import {HELPER_LIBS, POLKIT_ACTION_ID, RULES_PATH} from '../../extension/lib/constants.js';
+import {HELPER_LIBS, HELPER_VERBS, POLKIT_ACTION_ID, RULES_PATH} from '../../extension/lib/constants.js';
 import {
-    HELPER_MANIFEST, asPkexecArgv, helperStatus, installSteps, mustTrust,
-    shellQuote, terminalCommand, uninstallSteps,
+    HELPER_MANIFEST, helperStatus, helperUsable, installSteps, mustTrust,
+    pkexecCommand, shellQuote, terminalCommand, uninstallSteps,
 } from '../../extension/lib/install.js';
-import {isTrustedInfo} from '../../extension/lib/trust.js';
+import {MISSING} from '../../extension/lib/trust.js';
 
 const EXT = '/home/u/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com';
 const root = {uid: 0, mode: 0o100644, type: 'regular'};
@@ -41,11 +41,11 @@ test('install: every bundled source file exists in the extension', () => {
         assert.ok(GLib.file_test(`${repo}/extension/${f.source}`, GLib.FileTest.EXISTS), f.source);
 });
 
-test('install: the button runs the steps through one root shell', () => {
-    const argv = asPkexecArgv(installSteps(EXT));
-    assert.equal(argv.slice(0, 3), ['pkexec', '/bin/sh', '-c'], 'root-owned shell, one prompt');
-    assert.equal(argv.length, 4);
-    assert.equal(argv[3], installSteps(EXT).join(' && '));
+test('install: the button runs the bundled installer through one pkexec prompt', () => {
+    assert.equal(pkexecCommand(EXT, 'install'), ['pkexec', '/usr/bin/gjs', '-m', `${EXT}/helper/install.js`, 'install']);
+    assert.equal(pkexecCommand(EXT, 'remove'), ['pkexec', '/usr/bin/gjs', '-m', `${EXT}/helper/install.js`, 'remove']);
+    assert.equal(pkexecCommand("/home/o'neil/ext", 'install')[3], "/home/o'neil/ext/helper/install.js",
+        'an argv needs no quoting');
 });
 
 test('install: odd extension paths stay quoted in the steps', () => {
@@ -73,23 +73,52 @@ test('install: uninstall removes helper dir, policy and rule', () => {
 });
 
 test('install: helperStatus', () => {
-    assert.equal(helperStatus([file(null), file(null)], isTrustedInfo), 'missing');
-    assert.equal(helperStatus([file(rootDir, true, 'directory'), file(root)], isTrustedInfo), 'installed');
-    assert.equal(helperStatus([file(rootDir, true, 'directory'), file(root, false)], isTrustedInfo), 'outdated');
-    assert.equal(helperStatus([file(root), file(null)], isTrustedInfo), 'untrusted', 'partial install');
-    assert.equal(helperStatus([file(root), file({...root, uid: 1000})], isTrustedInfo), 'untrusted');
+    const st = files => helperStatus(files);
+    assert.equal(st([file(MISSING), file(MISSING)]), 'missing');
+    assert.equal(st([file(rootDir, true, 'directory'), file(root)]), 'installed');
+    assert.equal(st([file(rootDir, true, 'directory'), file(root, false)]), 'outdated');
+    assert.equal(st([file(root), file(MISSING, false)]), 'partial', 'a file is gone');
+    assert.equal(st([file(root), file({...root, uid: 1000})]), 'untrusted');
+    assert.equal(st([file(root), file(null)]), 'untrusted', 'an own file that cannot be checked is not trusted');
 
-    const parent = (mode = 0o40755) => ({info: {uid: 0, mode, type: 'directory'}, same: true, type: 'directory', ancestor: true});
-    assert.equal(helperStatus([parent(), file(null)], isTrustedInfo), 'missing', 'parents exist without a helper');
-    assert.equal(helperStatus([parent(), file(root)], isTrustedInfo), 'installed');
-    assert.equal(helperStatus([parent(0o42775), file(root)], isTrustedInfo), 'unsafe-parent', 'staff-writable /usr/local');
+    const parent = (info = {uid: 0, mode: 0o40755, type: 'directory'}) =>
+        ({info, same: true, type: 'directory', ancestor: true});
+    assert.equal(st([parent(), file(MISSING)]), 'missing', 'parents exist without a helper');
+    assert.equal(st([parent(), file(root)]), 'installed');
+    assert.equal(st([parent({uid: 0, mode: 0o42775, type: 'directory'}), file(root)]), 'unsafe-parent', 'staff-writable /usr/local');
+    assert.equal(st([parent({uid: 0, mode: 0o120777, type: 'symlink'}), file(root)]), 'unsafe-parent',
+        'symlinked /usr/local (OSTree)');
 
     // The polkit rule may sit in a directory users can't read (Fedora 39/40).
     const rule = (info, same = true) => ({info, same, type: 'regular', bestEffort: true});
-    assert.equal(helperStatus([file(root), rule(null, false)], isTrustedInfo), 'installed', 'unreadable rule ignored');
-    assert.equal(helperStatus([file(root), rule(root, false)], isTrustedInfo), 'outdated', 'visible stale rule');
-    assert.equal(helperStatus([file(root), rule({...root, uid: 1000})], isTrustedInfo), 'untrusted', 'visible user-owned rule');
-    assert.equal(helperStatus([file(null), rule(root)], isTrustedInfo), 'missing', 'a stray rule alone is not an install');
+    assert.equal(st([file(root), rule(null, false)]), 'installed', 'unreadable rule ignored');
+    assert.equal(st([file(root), rule(MISSING, false)]), 'partial', 'visibly missing rule is not ignored');
+    assert.equal(st([file(root), rule(root, false)]), 'outdated', 'visible stale rule');
+    assert.equal(st([file(root), rule({...root, uid: 1000})]), 'untrusted', 'visible user-owned rule');
+    assert.equal(st([file(MISSING), rule(root)]), 'missing', 'a stray rule alone is not an install');
+});
+
+test('install: helperUsable needs every file trusted, the rule only when visible', () => {
+    const good = HELPER_MANIFEST.map(f => (f.type === 'directory' ? rootDir : root));
+    assert.ok(helperUsable(good));
+    const ruleAt = HELPER_MANIFEST.findIndex(f => f.bestEffort);
+    const withRule = info => good.map((x, i) => (i === ruleAt ? info : x));
+    assert.ok(helperUsable(withRule(null)), 'rule unreadable: not held against it');
+    assert.ok(!helperUsable(withRule(MISSING)), 'rule deleted: the password route instead');
+    assert.ok(!helperUsable(withRule({...root, uid: 1000})), 'rule user-owned');
+    for (let i = 0; i < good.length; i++) {
+        if (i === ruleAt)
+            continue;
+        assert.ok(!helperUsable(good.map((x, j) => (j === i ? null : x))), `${HELPER_MANIFEST[i].installed} unreadable`);
+        assert.ok(!helperUsable(good.map((x, j) => (j === i ? MISSING : x))), `${HELPER_MANIFEST[i].installed} missing`);
+    }
+});
+
+test('install: the helper verbs are a frozen interface', () => {
+    // Installed helpers aren't updated with the extension, so these must
+    // keep working forever. Changing this test means breaking old installs.
+    assert.equal([...HELPER_VERBS], ['windows', 'default']);
+    assert.ok(Object.isFrozen(HELPER_VERBS));
 });
 
 // The polkit rule is JavaScript that polkitd runs. Run it here against a fake
@@ -130,6 +159,7 @@ test('install: only the polkit rule is best-effort', () => {
     assert.equal(best, [RULES_PATH]);
     for (const f of HELPER_MANIFEST.filter(m => !m.bestEffort))
         assert.ok(mustTrust(f, null), `${f.installed} must always be verified`);
-    assert.ok(!mustTrust({bestEffort: true}, null));
+    assert.ok(!mustTrust({bestEffort: true}, null), 'unreadable');
+    assert.ok(mustTrust({bestEffort: true}, MISSING), 'visibly missing');
     assert.ok(mustTrust({bestEffort: true}, root));
 });

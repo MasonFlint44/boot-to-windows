@@ -103,4 +103,25 @@ test('state: targetEntry and reached', () => {
 
     const none = stateOf(firmwareFiles({entries: {2: UBUNTU}, order: [2]}));
     assert.throws(() => targetEntry(none, 'windows'), /No Windows/);
+    assert.ok(reached(none, 'default'));
+});
+
+test('state: "as usual" is reachable from states the toggle hides', () => {
+    // Someone else pointed BootNext at the DVD; the toggle is hidden in
+    // these states, but the settings page can still undo it.
+    const winDefault = stateOf(firmwareFiles({entries: {0: WINDOWS, 2: UBUNTU, 3: DVD}, order: [0, 2], next: 3}));
+    assert.equal(winDefault.status, 'windows-is-default');
+    assert.ok(!reached(winDefault, 'default'));
+    assert.equal(targetEntry(winDefault, 'default'), 0);
+    assert.ok(reached(stateOf(firmwareFiles({entries: {0: WINDOWS, 2: UBUNTU}, order: [0, 2]})), 'default'));
+
+    const noWin = stateOf(firmwareFiles({entries: {2: UBUNTU, 3: DVD}, order: [2], next: 3}));
+    assert.equal(noWin.status, 'no-windows');
+    assert.ok(!reached(noWin, 'default'));
+    assert.equal(targetEntry(noWin, 'default'), 2);
+
+    assert.ok(!reached(deriveState(snapshotFromFiles(false, new Map())), 'default'), 'no EFI: nothing reached');
+    const noDefault = stateOf(firmwareFiles({entries: {0: WINDOWS}, order: [], next: 0}));
+    assert.ok(!reached(noDefault, 'default'));
+    assert.throws(() => targetEntry(noDefault, 'default'), /No default/);
 });

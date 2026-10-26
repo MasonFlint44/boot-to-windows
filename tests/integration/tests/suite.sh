@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # eval '…' conditions expand later, on purpose
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # Integration suite for the real extension, run inside a real headless GNOME
@@ -37,6 +38,8 @@ assert_eq "$(checked)" false "unchecked with no BootNext"
 assert_eq "$(subtitle)" null "no subtitle when nothing is armed"
 assert_eq "$(icon_on)" false "top-bar icon hidden"
 assert_eq "$(shell_eval "$T.menu._headerSubtitle?.text ?? $T.menu._headerSubtitle?.get_text?.()")" '"ubuntu (as usual)"' "menu header names the default"
+assert_eq "$(shell_eval "$T.gicon.get_file().get_basename()")" '"boot-to-windows-symbolic.svg"' "toggle uses the bundled icon"
+assert_eq "$(shell_eval "$T.gicon.get_file().query_exists(null) && $IND._icon.gicon.equal($T.gicon)")" true "icon file is there; the top bar uses it too"
 
 log "1b. a change that needs no write asks for nothing and suggests nothing"
 shim_reset
@@ -44,6 +47,30 @@ shell_eval "$T._write('default')" >/dev/null; idle
 assert_eq "$(pkexec_calls)" "" "no pkexec"
 assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "no suggestion"
 assert_eq "$(gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/schemas" get org.gnome.shell.extensions.boot-to-windows one-click-offered)" false "not marked as offered"
+assert_no_log_errors
+
+log "1c. a suggestion that fails to show isn't counted as offered"
+NUDGE='Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === "Skip the password next time?")'
+offered() { gsettings --schemadir "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/schemas" get org.gnome.shell.extensions.boot-to-windows one-click-offered; }
+# Break the message tray where notify.js hands the notification over
+# (46+: the shared system source; 45: Main.messageTray.add).
+shell_eval "(async () => {
+    const MT = await import('resource:///org/gnome/shell/ui/messageTray.js');
+    const target = MT.getSystemSource ? MT.getSystemSource() : Main.messageTray;
+    const method = MT.getSystemSource ? 'addNotification' : 'add';
+    target[method] = () => { throw new Error('tray is down'); };
+    global._btwUnbreak = () => delete target[method];
+})(), null" >/dev/null
+sleep 0.5
+shim_reset
+click; wait_checked true
+assert_eq "$(offered)" false "not marked as offered"
+assert_eq "$(shell_eval "$NUDGE.length")" 0 "nothing shown"
+shell_eval 'global._btwUnbreak()' >/dev/null
+click; wait_checked false
+wait_until 5 eval 'test "$(shellctl eval "$NUDGE.length")" = 1' || fail "suggestion not retried once the tray works"
+assert_eq "$(offered)" true "marked once shown"
+log_mark                                  # the deliberate failure above logged an error
 
 log "2. click arms Windows through pkexec efibootmgr, verified by re-read"
 shim_reset
@@ -53,13 +80,11 @@ assert_eq "$(bootnext)" 0001 "BootNext = Windows entry"
 assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "pkexec argv"
 assert_eq "$(subtitle)" '"Next restart"' "subtitle"
 assert_eq "$(icon_on)" true "top-bar icon shown while armed"
-NUDGE='Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === "Skip the password next time?")'
-wait_until 5 eval 'test "$(shellctl eval "$NUDGE.length")" = 1' || fail "no one-click suggestion after the first password write"
-pass "one-click suggested once"
+assert_eq "$(shell_eval "$NUDGE.length")" 1 "still just the one suggestion"
 
 log "2b. clicking the suggestion opens the settings; it never comes back"
 shell_eval "(() => { const e = Main.extensionManager.lookup('$EXT_UUID').stateObj; global._btwPrefs = 0; e.openPreferences = () => global._btwPrefs++; })(), null" >/dev/null
-shell_eval "$NUDGE[0].activate()" >/dev/null
+shell_eval "${NUDGE}[0].activate()" >/dev/null
 assert_eq "$(shell_eval global._btwPrefs)" 1 "settings opened"
 
 log "3. click again disarms by pointing at the default (no --delete-bootnext)"
@@ -155,6 +180,30 @@ efivar_boot_entry 0001 'Windows Boot Manager' '\EFI\Microsoft\Boot\bootmgfw.efi'
 open_qs
 wait_until 5 eval 'test "$(shellctl eval "$T.visible")" = true' || fail "never came back"
 close_qs
+
+log "11b. another tool's BootNext can be undone in the settings, even with the toggle hidden"
+efivar_boot_entry 0003 'UEFI:CD/DVD Drive' '\EFI\Boot\bootx64.efi'
+efivar_write BootOrder "$(u16list_hex 0001,0000)"   # Windows is the default: toggle hidden
+efivar_write BootNext "$(u16le 0003)"
+shim_reset
+assert_contains "$(prefs_probe)" '"title":"Next restart","subtitle":"UEFI:CD/DVD Drive (Boot0003), once"' "pending boot shown"
+rows=$(prefs_probe 'Start as usual')
+assert_eq "$(bootnext)" 0001 "BootNext = the default (Windows, here)"
+assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "one write"
+case $rows in *'"button":"Start as usual"'*) fail "still offered: $rows" ;; esac
+pass "nothing left to undo"
+efivar_write BootOrder "$(u16list_hex 0000,0001)"
+efivar_write BootNext "$(u16le 0000)"
+efivar_delete Boot0003
+
+log "11c. an unreadable boot entry doesn't stop the toggle following the firmware"
+mkdir "$(efivar_path Boot0004)"                       # a directory can't be read as a variable
+efivar_write BootNext "$(u16le 0001)"
+open_qs; wait_checked true; close_qs
+assert_contains "$(prefs_probe)" '"title":"Skipped (unreadable)","subtitle":"Boot0004: ' "the settings list it"
+efivar_write BootNext "$(u16le 0000)"
+open_qs; wait_checked false; close_qs
+rmdir "$(efivar_path Boot0004)"
 
 log "12. Restart to Windows… arms, then hands off to GNOME's restart dialog"
 shim_reset

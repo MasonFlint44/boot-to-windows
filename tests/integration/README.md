@@ -7,12 +7,22 @@ UEFI firmware is faked: fixture efivars on a tmpfs at `/sys/firmware/efi/efivars
 plus logging shims for `pkexec` and `efibootmgr`.
 
 ```sh
+./test-all.sh                     # everything below, on every version in metadata.json (CI runs this)
+./test-all.sh 50                  # one version
+
 ./run.sh <45..50> <extension-dir> [test-script]
-./run.sh 50 fixture-extension tests/probe.sh                          # the prototype test
-./run.sh 48 selftest/broken-extension selftest/expect-failures.sh     # harness self-test
-STRICT_METADATA=1 ./run.sh 46 fixture-extension selftest/expect-out-of-date.sh
-for v in 45 46 47 48 49 50; do ./run.sh $v ../../path/to/extension tests/probe.sh || echo "FAIL $v"; done
+./run.sh 50 ../../extension tests/suite.sh                                  # one suite
+ROOT_SETUP=hooks/install-helper.sh ./run.sh 50 ../../extension tests/helper.sh
+./run.sh 48 selftest/broken-extension selftest/expect-failures.sh           # harness self-test
+STRICT_METADATA=1 ./run.sh 46 selftest/broken-extension selftest/expect-out-of-date.sh
 ```
+
+The suites (`tests/`): `suite.sh` (password route, races, restart, hiding,
+settings page), `prefs-buttons.sh` (the settings buttons, run for real as root),
+`helper.sh` (one-click route), `helper-tampered.sh` (an unsafe install is
+refused). The self-tests (`selftest/`) prove the harness can fail: a broken
+extension must be caught, and the strict version gate must refuse an
+unlisted version.
 
 Exit code = test result (0 pass, 1 assertion failed, 90 shell never became ready).
 Logs land in `.work/out-<major>/` (gitignored): `run.log`, `shell.log` (gnome-shell
@@ -23,23 +33,23 @@ stdout/stderr), `session-bus.log` (dbus + activated services), `pkexec.log`,
 
 | GNOME | Base image | gnome-shell | Starts headless | Extension ACTIVE | disable→enable ×3 | Eval (via harness ext) | Firmware fixture + shims | Version gate (STRICT) |
 |---|---|---|---|---|---|---|---|---|
-| 45 | fedora:39 (EOL) | 45.10 | yes, ~1.0 s | yes | yes | yes | yes | n/a (fixture lists 45) |
+| 45 | fedora:39 (EOL) | 45.10 | yes, ~1.0 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 | 46 | fedora:40 (EOL) | 46.10 | yes, ~0.9 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 | 47 | fedora:41 (EOL) | 47.10 | yes, ~1.1 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 | 48 | fedora:42 | 48.8 | yes, ~0.9 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 | 49 | fedora:43 | 49.10 | yes, ~0.8 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 | 50 | fedora:44 | 50.6 | yes, ~0.8 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
 
-`tests/probe.sh` = 26 assertions, all green on all six; `selftest/expect-failures.sh`
-(broken extension → ERROR, both error channels catch it, Eval refused when unsafe
-mode is off) green on all six. The probe runs against the latest point release in
-each Fedora repo, not the `.0` — a `.0`-specific regression would not be caught.
+`selftest/expect-failures.sh` (broken extension → ERROR, both error channels
+catch it, Eval refused when unsafe mode is off) is green on all six, and runs
+in CI with the suites. Images take the latest point release in each Fedora
+repo, not the `.0`, so a `.0`-specific regression would not be caught.
 
 **Timings (this host, 20 cores):** cold image build 70–130 s per version (all six in
 parallel ≈ 2 min; dominated by the dnf download). Image size 1.7–1.9 GB each
 (gnome-shell hard-depends on evolution-data-server, gnome-control-center bits, etc.;
 `install_weak_deps=False` is already on). A run is ~3 s wall: the shell is READY in
-≈1 s, the 26-assertion probe takes ≈1 s.
+≈1 s; a suite takes a few seconds more.
 
 ## How it works / flags
 
@@ -81,11 +91,11 @@ shell then posts a "System was put in unsafe mode" notification, which is harmle
 
 From a test:
 ```sh
-T=$(qs_toggle_js 'Harness Probe')     # (Main.panel.statusArea.quickSettings.menu._grid.get_children().filter(c => c.title === "Harness Probe"))[0]
+T=$(qs_toggle_js 'Boot to Windows')   # (Main.panel.statusArea.quickSettings.menu._grid.get_children().filter(c => c.title === "Boot to Windows"))[0]
 shell_eval "$T.checked"               # -> false   (JSON-stringified result)
-shell_eval "$T.subtitle"              # -> "BootNext: none"
+shell_eval "$T.subtitle"              # -> null
 shell_eval "$T.emit('clicked', 1)"    # simulate a click
-shell_eval "$T.sync()"                # call any method on the toggle
+shell_eval "$T.refresh()"             # call any method on the toggle
 ```
 `menu._grid` is a private field, but it exists and works on 45–50. `title`/`subtitle`
 are the QuickToggle property names on all of them.
@@ -109,7 +119,9 @@ are the QuickToggle property names on all of them.
   container can touch real NVRAM.
 - **`/usr/bin/pkexec` shim:** appends shell-quoted argv to `pkexec.log`, then execs the
   command **as the same user** (no elevation). It requires an absolute path like real
-  pkexec. `pkexec_mode dismiss|deny` → exit 126/127 with pkexec's stderr text.
+  pkexec. `pkexec_mode dismiss|deny` → exit 126/127 with pkexec's stderr text;
+  `slow` waits 3 s first; `root` really runs the command as root through the
+  harness's root job queue, like an approved prompt.
 - **`/usr/bin/efibootmgr` fake:** logs argv; supports `-n/--bootnext XXXX` (rejects
   nonexistent entries), `-N/--delete-bootnext`, `-o/--bootorder`, and prints a real-style
   listing. `efibootmgr_mode fail` → exit 1.
@@ -148,31 +160,14 @@ with `set -e`; `$EXT_UUID`, `$GNOME_MAJOR`, `$HARNESS_RUN` are set.
 
 ## GitHub Actions
 
-```yaml
-jobs:
-  gnome-shell:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        gnome: [45, 46, 47, 48, 49, 50]
-    steps:
-      - uses: actions/checkout@v4
-      - name: Integration test on GNOME ${{ matrix.gnome }}
-        run: tests/integration/run.sh ${{ matrix.gnome }} <extension-dir> tests/integration/tests/<test>.sh
-      - name: Upload logs
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: gnome-${{ matrix.gnome }}-logs
-          path: tests/integration/.work/out-${{ matrix.gnome }}/
-```
-`run.sh` builds the image on first use (~1–2 min per job). To cache it, add
-`docker/setup-buildx-action` + `docker/build-push-action` with `load: true`,
-`tags: btw-gnome:${{ matrix.gnome }}`, `build-args: FEDORA=…`, and
-`cache-from/cache-to: type=gha,scope=gnome-${{ matrix.gnome }}`. Map 45→39 … 50→44
-with a matrix `include:`. Not yet run on a hosted runner. It should work there
-unchanged, since it needs no privileges and no KVM, but that hasn't been observed.
+`.github/workflows/ci.yml` runs `test-all.sh <major>` in a matrix over 45–50 on
+`ubuntu-24.04`, and uploads `.work/` (a hidden folder, hence
+`include-hidden-files: true`). Each job builds its own image (~1–2 min). Two
+things differ from a desktop host, and the harness already handles both:
+Ubuntu's AppArmor `docker-default` profile denies writes under `/sys/firmware`
+(so `run.sh` passes `apparmor=unconfined`), and `sudo` inside the container
+fails under PAM (so root work goes through the root job queue in
+`harness/rootq.sh`).
 
 ## Layout
 
@@ -185,7 +180,7 @@ harness/lib.sh, efivars.sh    test helpers
 harness/shellctl.js           gjs D-Bus client (Eval, extension info/state/enable/disable)
 harness/shims/                pkexec, efibootmgr fakes
 harness/harness-extension/    harness@btw.test (unsafe mode → Eval)
-fixture-extension/            harness-probe@btw.test stand-in QuickToggle
-tests/probe.sh                prototype test (26 assertions)
-selftest/                     negative controls
+hooks/                        ROOT_SETUP scripts (install the helper as users would)
+tests/                        the suites, plus prefs-probe.js (builds the real settings page)
+selftest/                     negative controls (run by test-all.sh)
 ```

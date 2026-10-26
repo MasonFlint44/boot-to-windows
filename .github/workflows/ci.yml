@@ -1,7 +1,11 @@
 name: CI
 on:
   push:
+    branches: [main]
   pull_request:
+
+permissions:
+  contents: read
 
 jobs:
   lint-and-unit:
@@ -19,6 +23,7 @@ jobs:
           tests/integration/run.sh tests/integration/test-all.sh
           tests/integration/harness/*.sh tests/integration/harness/shims/pkexec
           tests/integration/hooks/*.sh tools/*.sh
+          tests/integration/tests/*.sh tests/integration/selftest/*.sh
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs gnome-shell
       - run: npm test
       - run: ./tools/pack.sh
@@ -28,8 +33,10 @@ jobs:
           path: build/*.shell-extension.zip
 
   # Every GNOME Shell version metadata.json claims, in a real headless shell,
-  # with the strict version gate on. A version only belongs in shell-version
-  # if its row here is green.
+  # with the strict version gate on, plus the harness self-tests (proof the
+  # assertions and the gate can fail). A version only belongs in
+  # shell-version if its row here is green. Images take each version's
+  # latest point release, not its .0.
   gnome-shell:
     runs-on: ubuntu-24.04
     strategy:

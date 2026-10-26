@@ -102,3 +102,11 @@ test('helper: Windows already default leaves nothing to arm', () => {
     assert.equal(r, {code: EXIT_OK, out: 'windows-is-default', err: ''});
     assert.equal(m.calls, []);
 });
+
+test('helper: default undoes another BootNext even when Windows is the default', () => {
+    const m = machine(firmwareFiles({entries: {0: WINDOWS, 2: UBUNTU, 3: DVD}, order: [0, 2], next: 3}));
+    const r = helperMain({args: ['default'], ...m});
+    assert.equal(r.code, EXIT_OK, r.err);
+    assert.equal(m.calls, [['/usr/bin/efibootmgr', '--bootnext', '0000']]);
+    assert.equal(bootNext(m), 0);
+});

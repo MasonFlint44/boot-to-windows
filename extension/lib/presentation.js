@@ -2,7 +2,8 @@
 //
 // What the toggle and its menu show for each boot state. Pure: no GI imports.
 
-export const ICON = 'system-reboot-symbolic';
+/** Symbolic (recoloured to the theme), in the extension's icons/ folder. */
+export const ICON_FILE = 'boot-to-windows-symbolic.svg';
 export const NAME = 'Boot to Windows';
 
 /**

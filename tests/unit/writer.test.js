@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+import Gio from 'gi://Gio';
+import GLib from 'gi://GLib';
+
 import {assert, test} from './harness.js';
 import {dualBoot, firmwareFiles, UBUNTU} from './fixtures.js';
 import {HELPER_PATH} from '../../extension/lib/constants.js';
 import {snapshotFromFiles} from '../../extension/lib/efivars.js';
 import {deriveState} from '../../extension/lib/state.js';
-import {isTrustedInfo} from '../../extension/lib/trust.js';
+import {MISSING, infoFromError, isTrustedInfo, queryTrustInfo} from '../../extension/lib/trust.js';
 import {
     DismissedError, WriteError, interpretExit, planCommand,
 } from '../../extension/lib/writer.js';
@@ -54,7 +57,44 @@ test('trust: only root-owned files nobody else can write', () => {
     assert.ok(!isTrustedInfo({uid: 1000, mode: 0o100755, type: 'regular'}), 'user-owned');
     assert.ok(!isTrustedInfo({uid: 0, mode: 0o100775, type: 'regular'}), 'group-writable');
     assert.ok(!isTrustedInfo({uid: 0, mode: 0o100757, type: 'regular'}), 'world-writable');
-    assert.ok(!isTrustedInfo({uid: 0, mode: 0o120777, type: 'other'}), 'symlink');
+    assert.ok(!isTrustedInfo({uid: 0, mode: 0o120777, type: 'symlink'}), 'symlink');
     assert.ok(!isTrustedInfo({uid: 0, mode: 0o40755, type: 'directory'}), 'wrong type');
-    assert.ok(!isTrustedInfo(null), 'missing');
+    assert.ok(!isTrustedInfo(null), 'unknown');
+    assert.ok(!isTrustedInfo(MISSING), 'missing');
+    assert.ok(!isTrustedInfo(MISSING, 'directory'), 'missing directory');
+});
+
+test('trust: missing files are told apart from ones that cannot be checked', () => {
+    const err = code => new GLib.Error(Gio.IOErrorEnum, code, 'x');
+    assert.equal(infoFromError(Gio, err(Gio.IOErrorEnum.NOT_FOUND)), MISSING);
+    assert.equal(infoFromError(Gio, err(Gio.IOErrorEnum.NOT_DIRECTORY)), MISSING);
+    assert.equal(infoFromError(Gio, err(Gio.IOErrorEnum.PERMISSION_DENIED)), null);
+    assert.equal(infoFromError(Gio, err(Gio.IOErrorEnum.CANCELLED)), null);
+    assert.equal(infoFromError(Gio, new Error('plain')), null);
+
+    assert.equal(queryTrustInfo(Gio, '/nonexistent/boot-to-windows'), MISSING);
+    assert.equal(queryTrustInfo(Gio, '/etc/hostname/not-a-dir'), MISSING);
+    assert.equal(queryTrustInfo(Gio, '/').type, 'directory');
+
+    const dir = GLib.dir_make_tmp('btw-trust-XXXXXX');
+    const chmod = mode => Gio.File.new_for_path(dir).set_attribute_uint32(
+        'unix::mode', mode, Gio.FileQueryInfoFlags.NONE, null);
+    try {
+        GLib.file_set_contents(`${dir}/f`, 'x');
+        const link = Gio.File.new_for_path(`${dir}/l`);
+        link.make_symbolic_link('/usr/bin/env', null);
+        assert.equal(queryTrustInfo(Gio, `${dir}/l`).type, 'symlink', 'links are not followed');
+        assert.equal(queryTrustInfo(Gio, `${dir}/f`).type, 'regular');
+        if (new Gio.Credentials().get_unix_user() !== 0) {
+            chmod(0o000);
+            const hidden = queryTrustInfo(Gio, `${dir}/f`);
+            chmod(0o700);
+            assert.equal(hidden, null, 'in an unreadable directory: unknown, not missing');
+        }
+    } finally {
+        chmod(0o700);
+        for (const n of ['f', 'l'])
+            Gio.File.new_for_path(`${dir}/${n}`).delete(null);
+        Gio.File.new_for_path(dir).delete(null);
+    }
 });

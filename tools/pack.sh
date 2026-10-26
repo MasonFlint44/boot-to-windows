@@ -6,5 +6,6 @@ mkdir -p build
 gnome-extensions pack extension \
     --extra-source=lib \
     --extra-source=helper \
+    --extra-source=icons \
     --out-dir=build --force
 echo "built: $(ls build/*.shell-extension.zip)"

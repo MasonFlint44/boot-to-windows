@@ -25,11 +25,21 @@ function fixtureDir(files) {
 
 function rmrf(dir) {
     const d = Gio.File.new_for_path(dir);
-    const e = d.enumerate_children('standard::name', Gio.FileQueryInfoFlags.NONE, null);
+    const e = d.enumerate_children('standard::name,standard::type', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
     let info;
-    while ((info = e.next_file(null)) !== null)
-        d.get_child(info.get_name()).delete(null);
+    while ((info = e.next_file(null)) !== null) {
+        if (info.get_file_type() === Gio.FileType.DIRECTORY)
+            rmrf(`${dir}/${info.get_name()}`);
+        else
+            d.get_child(info.get_name()).delete(null);
+    }
+    e.close(null);
     d.delete(null);
+}
+
+/** Make a variable unreadable for everyone, root included: a directory can't be loaded. */
+function unreadable(dir, name) {
+    Gio.File.new_for_path(`${dir}/${varFileName(name)}`).make_directory(null);
 }
 
 test('firmware: async and sync readers agree on a fixture dir', async () => {
@@ -60,6 +70,39 @@ test('firmware: many entries are all read (enumerator paging)', async () => {
     }
 });
 
+test('firmware: an unreadable entry is skipped and reported, not fatal', async () => {
+    const files = dualBoot({next: 0});
+    files.delete(varFileName('Boot0003'));
+    const dir = fixtureDir(files);
+    unreadable(dir, 'Boot0003');
+    try {
+        for (const snap of [await readSnapshot(null, dir), readSnapshotSync(dir)]) {
+            assert.equal(deriveState(snap).status, 'armed', 'the rest still reads');
+            assert.ok(!snap.entries.has(3));
+            assert.equal(snap.problems.length, 1);
+            assert.ok(snap.problems[0].startsWith('Boot0003: '), snap.problems[0]);
+        }
+    } finally {
+        rmrf(dir);
+    }
+});
+
+test('firmware: an unreadable BootNext or BootOrder still fails the read', async () => {
+    for (const name of ['BootNext', 'BootOrder']) {
+        const files = dualBoot({next: 0});
+        files.delete(varFileName(name));
+        const dir = fixtureDir(files);
+        unreadable(dir, name);
+        try {
+            // eslint-disable-next-line no-await-in-loop
+            await assert.rejects(readSnapshot(null, dir), /./, name);
+            assert.throws(() => readSnapshotSync(dir), /./, name);
+        } finally {
+            rmrf(dir);
+        }
+    }
+});
+
 test('firmware: missing efivars dir means not EFI', async () => {
     const snap = await readSnapshot(null, '/nonexistent/efivars');
     assert.equal(snap.efi, false);
@@ -73,6 +116,26 @@ test('firmware: cancellation rejects', async () => {
         c.cancel();
         await assert.rejects(readSnapshot(c, dir), /cancel/i);
     } finally {
+        rmrf(dir);
+    }
+});
+
+test('firmware: cancelling while entries load still rejects (not "unreadable")', async () => {
+    // Only Boot#### entries, the variables whose read errors are tolerated.
+    const files = dualBoot();
+    files.delete(varFileName('BootOrder'));
+    const dir = fixtureDir(files);
+    const c = new Gio.Cancellable();
+    // The listing closes just before the loads start: cancel right there.
+    const close = Gio.FileEnumerator.prototype.close;
+    Gio.FileEnumerator.prototype.close = function (...args) {
+        c.cancel();
+        return close.apply(this, args);
+    };
+    try {
+        await assert.rejects(readSnapshot(c, dir), /cancel/i);
+    } finally {
+        Gio.FileEnumerator.prototype.close = close;
         rmrf(dir);
     }
 });

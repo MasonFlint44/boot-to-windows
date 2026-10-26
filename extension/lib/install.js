@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
 // Installing the optional one-click helper: which files go where, the
-// commands that do it (one list of steps, shown as a terminal command or run
-// by the settings page's button through a single pkexec prompt), and how an
-// existing install is judged. Pure: no GI imports.
+// commands that do it (one list of steps, run by helper/install.js, which the
+// settings page's button starts through pkexec and the terminal command
+// through sudo), and how an existing install is judged. Pure: no GI imports.
 
 import {
-    HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH, POLICY_PATH,
-    RULES_PATH,
+    GJS_PATH, HELPER_ANCESTORS, HELPER_DIR, HELPER_LIBS, HELPER_PATH,
+    POLICY_PATH, RULES_PATH,
 } from './constants.js';
+import {MISSING, isTrustedInfo} from './trust.js';
 
 const POLICY_FILE = POLICY_PATH.split('/').pop();
 const RULES_FILE = 'com.masonflint.BootToWindows.rules';
@@ -56,53 +57,63 @@ export function uninstallSteps() {
     return [`rm -rf ${HELPER_DIR}`, `rm -f ${POLICY_PATH} ${RULES_PATH}`];
 }
 
+/** Path of the bundled installer, which runs installSteps / uninstallSteps. */
+function installerPath(extPath) {
+    return `${extPath}/helper/install.js`;
+}
+
 /**
- * For a terminal: one short command that runs the bundled installer, which
- * performs exactly installSteps / uninstallSteps. `home` shortens the path
- * to ~/... when that needs no quoting.
+ * For a terminal: one short command that runs the bundled installer. `home`
+ * shortens the path to ~/... when that needs no quoting.
  */
 export function terminalCommand(extPath, verb = 'install', home = null) {
-    let script = shellQuote(`${extPath}/helper/install.js`);
+    let script = shellQuote(installerPath(extPath));
     if (home && script.startsWith(`${home}/`))
         script = `~${script.slice(home.length)}`;
     return `sudo gjs -m ${script}${verb === 'remove' ? ' remove' : ''}`;
 }
 
-/**
- * For the settings page's button: one pkexec prompt for the whole job.
- * /bin/sh is root-owned; the script is built only from fixed paths and the
- * extension's own directory, quoted.
- */
-export function asPkexecArgv(steps) {
-    return ['pkexec', '/bin/sh', '-c', steps.join(' && ')];
+/** For the settings page's button: the same installer, through one pkexec prompt. */
+export function pkexecCommand(extPath, verb = 'install') {
+    return ['pkexec', GJS_PATH, '-m', installerPath(extPath), verb];
 }
-
 
 /**
  * Must this manifest entry be root-owned before the helper is used? Ancestors
- * and the helper's own files always; the best-effort rule only if visible.
+ * and the helper's own files always. The best-effort rule too, unless it
+ * can't be checked (null): a rule that is visibly missing still counts.
  */
 export function mustTrust(entry, info) {
     return !entry.bestEffort || info !== null;
 }
 
 /**
- * @param {{info: object|null, type: string, same: boolean, ancestor?: boolean, bestEffort?: boolean}[]} files
- *   each HELPER_MANIFEST entry with its trust info (null = missing or not
- *   visible) and whether its contents match the bundled copy
- * @param {(info: object|null, type: string) => boolean} isTrusted
- * @returns {'missing'|'untrusted'|'unsafe-parent'|'outdated'|'installed'}
+ * Is the helper safe to hand to pkexec?
+ *
+ * @param {(object|null)[]} infos  trust info for each HELPER_MANIFEST entry
  */
-export function helperStatus(files, isTrusted) {
+export function helperUsable(infos) {
+    return HELPER_MANIFEST.every((f, i) => !mustTrust(f, infos[i]) || isTrustedInfo(infos[i], f.type));
+}
+
+/**
+ * @param {{info: object|null, type: string, same: boolean, ancestor?: boolean, bestEffort?: boolean}[]} files
+ *   each HELPER_MANIFEST entry with its trust info (see trust.js) and whether
+ *   its contents match the bundled copy
+ * @returns {'missing'|'partial'|'untrusted'|'unsafe-parent'|'outdated'|'installed'}
+ */
+export function helperStatus(files) {
     const own = files.filter(f => !f.ancestor && !f.bestEffort);
-    const visible = files.filter(f => !f.ancestor && mustTrust(f, f.info));
-    if (own.every(f => f.info === null))
+    const checked = files.filter(f => !f.ancestor && mustTrust(f, f.info));
+    if (own.every(f => f.info === MISSING))
         return 'missing';
-    if (!visible.every(f => isTrusted(f.info, f.type)))
+    if (checked.some(f => f.info === MISSING))
+        return 'partial';
+    if (!checked.every(f => isTrustedInfo(f.info, f.type)))
         return 'untrusted';
-    if (!files.filter(f => f.ancestor).every(f => isTrusted(f.info, f.type)))
+    if (!files.filter(f => f.ancestor).every(f => isTrustedInfo(f.info, f.type)))
         return 'unsafe-parent';
-    if (!visible.every(f => f.same))
+    if (!checked.every(f => f.same))
         return 'outdated';
     return 'installed';
 }

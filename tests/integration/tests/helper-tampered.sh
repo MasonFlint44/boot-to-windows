@@ -1,4 +1,5 @@
 # shellcheck shell=bash
+# shellcheck disable=SC2016  # eval '…' conditions expand later, on purpose
 # SPDX-License-Identifier: GPL-2.0-or-later
 #
 # A helper install with one group-writable module must not be used:

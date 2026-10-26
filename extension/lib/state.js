@@ -106,12 +106,19 @@ export function targetEntry(state, target) {
     throw new Error(`unknown target: ${target}`);
 }
 
-/** Has the firmware reached the state a write to `target` asked for? */
+/**
+ * Has the firmware reached the state a write to `target` asked for?
+ * 'default' means the next boot is the usual one, whatever the status: that
+ * also lets a BootNext someone else set be undone when Windows is the
+ * default, or has no entry.
+ */
 export function reached(state, target) {
     if (target === 'windows') {
         if (state.status === 'windows-is-default')
             return state.bootNext === null || state.bootNext.num === state.windows.num;
         return state.status === 'armed';
     }
-    return state.status === 'ready';
+    if (!state.defaultEntry)
+        return state.status !== 'unsupported' && state.bootNext === null;
+    return state.bootNext === null || state.bootNext.num === state.defaultEntry.num;
 }

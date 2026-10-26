@@ -2,12 +2,16 @@
 //
 // Builds the extension's real preferences page with GNOME's own prefs
 // framework (loaded from the Extensions app's gresource) and prints every
-// row and button as JSON: [{group}, {title, subtitle}, {button}].
+// row and button, plus any toast shown, as JSON:
+// [{group}, {title, subtitle}, {button}, {toast}].
 //
 //   gjs -m prefs-probe.js <installed extension dir> [button label to click]
 //
-// With a label, clicks that button, waits for the page to re-render (the
-// one-click status row changes) and prints the page after.
+// With a label, clicks that button, waits until it is done (no button says
+// "Waiting…" any more) and prints the page after.
+//
+// PROBE_NO_PKEXEC=1: hide pkexec from the page (PATH points nowhere), to
+// test what the page does when it can't start a command at all.
 
 import Adw from 'gi://Adw';
 import Gio from 'gi://Gio';
@@ -42,7 +46,7 @@ function rows(window) {
     return out;
 }
 
-const statusOf = window => rows(window).find(r => r.title === 'One-click status')?.subtitle;
+const waiting = window => rows(window).some(r => r.button === 'Waiting…');
 
 // No top-level await: promise callbacks from Gio (the button's pkexec run)
 // aren't delivered while a module is still evaluating. Run the work from a
@@ -52,6 +56,8 @@ async function main() {
     const {default: Prefs} = await import(`file://${dir}/prefs.js`);
     const prefs = new Prefs(metadata);
     const window = new Adw.PreferencesWindow();
+    const toasts = [];
+    window.add_toast = toast => toasts.push(toast.title);
     await prefs.fillPreferencesWindow(window);
 
     const click = ARGV[1];
@@ -65,18 +71,19 @@ async function main() {
             printerr(`no button labelled ${click}: ${JSON.stringify(rows(window))}`);
             throw new Error('no such button');
         }
-        const before = statusOf(window);
+        if (GLib.getenv('PROBE_NO_PKEXEC') === '1')
+            GLib.setenv('PATH', '/nonexistent', true);
         button.emit('clicked');
         const start = GLib.get_monotonic_time();
         await new Promise(resolve => GLib.timeout_add(GLib.PRIORITY_DEFAULT, 100, () => {
-            const done = statusOf(window) !== before || GLib.get_monotonic_time() - start > 20e6;
+            const done = !waiting(window) || GLib.get_monotonic_time() - start > 20e6;
             if (done)
                 resolve();
             return !done;
         }));
     }
 
-    print(JSON.stringify(rows(window)));
+    print(JSON.stringify([...rows(window), ...toasts.map(toast => ({toast}))]));
 }
 
 const loop = new GLib.MainLoop(null, false);

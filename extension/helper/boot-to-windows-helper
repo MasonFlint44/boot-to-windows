@@ -15,20 +15,10 @@ import System from 'system';
 import {EFIBOOTMGR_CANDIDATES} from './lib/constants.js';
 import {readSnapshotSync} from './lib/firmware.js';
 import {helperMain} from './lib/helperCore.js';
-import {TRUST_ATTRIBUTES, infoFromGio, isTrustedInfo} from './lib/trust.js';
+import {isTrustedInfo, queryTrustInfo} from './lib/trust.js';
 
 function trustedEfibootmgr() {
-    for (const path of EFIBOOTMGR_CANDIDATES) {
-        try {
-            const info = Gio.File.new_for_path(path).query_info(
-                TRUST_ATTRIBUTES, Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
-            if (isTrustedInfo(infoFromGio(Gio, info)))
-                return path;
-        } catch {
-            // not at this path
-        }
-    }
-    return null;
+    return EFIBOOTMGR_CANDIDATES.find(p => isTrustedInfo(queryTrustInfo(Gio, p))) ?? null;
 }
 
 function run(argv) {
