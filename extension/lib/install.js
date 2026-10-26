@@ -56,9 +56,16 @@ export function uninstallSteps() {
     return [`rm -rf ${HELPER_DIR}`, `rm -f ${POLICY_PATH} ${RULES_PATH}`];
 }
 
-/** For a terminal: each step through sudo. */
-export function asSudoCommand(steps) {
-    return steps.map(s => `sudo ${s}`).join(' && ');
+/**
+ * For a terminal: one short command that runs the bundled installer, which
+ * performs exactly installSteps / uninstallSteps. `home` shortens the path
+ * to ~/... when that needs no quoting.
+ */
+export function terminalCommand(extPath, verb = 'install', home = null) {
+    let script = shellQuote(`${extPath}/helper/install.js`);
+    if (home && script.startsWith(`${home}/`))
+        script = `~${script.slice(home.length)}`;
+    return `sudo gjs -m ${script}${verb === 'remove' ? ' remove' : ''}`;
 }
 
 /**
@@ -70,8 +77,6 @@ export function asPkexecArgv(steps) {
     return ['pkexec', '/bin/sh', '-c', steps.join(' && ')];
 }
 
-export const installCommand = extPath => asSudoCommand(installSteps(extPath));
-export const uninstallCommand = () => asSudoCommand(uninstallSteps());
 
 /**
  * Must this manifest entry be root-owned before the helper is used? Ancestors

@@ -17,8 +17,8 @@ import {EFIBOOTMGR_CANDIDATES, HELPER_DIR} from './lib/constants.js';
 import {formatEntry} from './lib/efivars.js';
 import {readSnapshotSync} from './lib/firmware.js';
 import {
-    HELPER_MANIFEST, asPkexecArgv, helperStatus, installCommand, installSteps,
-    uninstallCommand, uninstallSteps,
+    HELPER_MANIFEST, asPkexecArgv, helperStatus, installSteps, terminalCommand,
+    uninstallSteps,
 } from './lib/install.js';
 import {deriveState} from './lib/state.js';
 import {TRUST_ATTRIBUTES, infoFromGio, isTrustedInfo} from './lib/trust.js';
@@ -179,10 +179,11 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
 
         const terminal = new Adw.ExpanderRow({
             title: 'Use a terminal instead',
-            subtitle: 'The same steps, to run with sudo',
+            subtitle: 'The same steps, run with sudo',
         });
-        terminal.add_row(commandRow('Install or update', installCommand(this.path), this._window));
-        terminal.add_row(commandRow('Remove', uninstallCommand(), this._window));
+        const home = GLib.get_home_dir();
+        terminal.add_row(commandRow('Install or update', terminalCommand(this.path, 'install', home), this._window));
+        terminal.add_row(commandRow('Remove', terminalCommand(this.path, 'remove', home), this._window));
         group.add(terminal);
 
         this._page.add(group);

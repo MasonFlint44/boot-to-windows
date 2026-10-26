@@ -5,8 +5,8 @@ import GLib from 'gi://GLib';
 import {assert, test} from './harness.js';
 import {HELPER_LIBS, POLKIT_ACTION_ID, RULES_PATH} from '../../extension/lib/constants.js';
 import {
-    HELPER_MANIFEST, asPkexecArgv, helperStatus, installCommand, installSteps,
-    mustTrust, shellQuote, uninstallCommand, uninstallSteps,
+    HELPER_MANIFEST, asPkexecArgv, helperStatus, installSteps, mustTrust,
+    shellQuote, terminalCommand, uninstallSteps,
 } from '../../extension/lib/install.js';
 import {isTrustedInfo} from '../../extension/lib/trust.js';
 
@@ -41,19 +41,28 @@ test('install: every bundled source file exists in the extension', () => {
         assert.ok(GLib.file_test(`${repo}/extension/${f.source}`, GLib.FileTest.EXISTS), f.source);
 });
 
-test('install: terminal and button run the same steps', () => {
-    const cmd = installCommand(EXT);
-    assert.equal(cmd, installSteps(EXT).map(s => `sudo ${s}`).join(' && '));
+test('install: the button runs the steps through one root shell', () => {
     const argv = asPkexecArgv(installSteps(EXT));
     assert.equal(argv.slice(0, 3), ['pkexec', '/bin/sh', '-c'], 'root-owned shell, one prompt');
     assert.equal(argv.length, 4);
     assert.equal(argv[3], installSteps(EXT).join(' && '));
-    assert.ok(!argv[3].includes('sudo'));
 });
 
-test('install: odd extension paths stay quoted', () => {
-    const cmd = installCommand("/home/o'neil/ext");
-    assert.ok(cmd.includes("'/home/o'\\''neil/ext/helper/boot-to-windows-helper'"));
+test('install: odd extension paths stay quoted in the steps', () => {
+    const steps = installSteps("/home/o'neil/ext").join(' ');
+    assert.ok(steps.includes("'/home/o'\\''neil/ext/helper/boot-to-windows-helper'"));
+});
+
+test('install: terminal command is short and runs the bundled installer', () => {
+    assert.equal(terminalCommand(EXT, 'install', '/home/u'),
+        'sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js');
+    assert.equal(terminalCommand(EXT, 'remove', '/home/u'),
+        'sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove');
+    assert.equal(terminalCommand(EXT), `sudo gjs -m ${EXT}/helper/install.js`, 'no home given');
+    assert.equal(terminalCommand('/opt/x y/ext', 'install', '/home/u'), "sudo gjs -m '/opt/x y/ext/helper/install.js'");
+    assert.equal(terminalCommand('/home/u/my ext', 'install', '/home/u'), "sudo gjs -m '/home/u/my ext/helper/install.js'",
+        'no ~ inside quotes');
+    assert.ok(terminalCommand(EXT, 'install', '/home/u').length < 110);
 });
 
 test('install: uninstall removes helper dir, policy and rule', () => {
@@ -61,7 +70,6 @@ test('install: uninstall removes helper dir, policy and rule', () => {
         'rm -rf /usr/local/libexec/boot-to-windows',
         `rm -f /usr/share/polkit-1/actions/com.masonflint.BootToWindows.set-next-boot.policy ${RULES_PATH}`,
     ]);
-    assert.equal(uninstallCommand(), uninstallSteps().map(s => `sudo ${s}`).join(' && '));
 });
 
 test('install: helperStatus', () => {

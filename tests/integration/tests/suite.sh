@@ -216,6 +216,6 @@ log "17. preferences page without the helper offers to enable it"
 rows=$(prefs_probe)
 assert_contains "$rows" '"title":"One-click status","subtitle":"Off. Each change asks for an administrator password."' "status"
 assert_contains "$rows" '"title":"Enable one-click switching"' "enable offered"
-assert_contains "$rows" '"title":"Install or update","subtitle":"sudo install -d' "terminal command shown"
+assert_contains "$rows" '"title":"Install or update","subtitle":"sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js"' "short terminal command shown"
 case $rows in *'"title":"Turn off one-click switching"'*) fail "remove offered with nothing installed" ;; esac
 pass "no remove button"

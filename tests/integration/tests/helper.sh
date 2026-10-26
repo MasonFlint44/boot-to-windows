@@ -53,13 +53,24 @@ assert_contains "$rows" '"title":"Windows entry","subtitle":"Windows Boot Manage
 assert_contains "$rows" '"title":"Default entry","subtitle":"ubuntu (Boot0000)"' "default entry row"
 assert_contains "$rows" '"title":"One-click status","subtitle":"On. Administrators at this computer switch without a password."' "status row"
 assert_contains "$rows" '"title":"Turn off one-click switching"' "remove offered"
-assert_contains "$rows" '"title":"Remove","subtitle":"sudo rm -rf /usr/local/libexec/boot-to-windows && sudo rm -f' "terminal remove command shown"
+assert_contains "$rows" '"title":"Remove","subtitle":"sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove"' "short terminal remove command"
 case $rows in *'"title":"Enable one-click switching"'*|*'"title":"Update the helper"'*) fail "install offered although installed" ;; esac
 pass "no enable/update when installed"
 
 log "6. no one-click suggestion when the helper did the work"
 assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "not suggested"
 
-log "7. clean logs"
+log "7. the terminal remove command takes it all out"
+as_root gjs -m "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/helper/install.js" remove >/dev/null
+for f in /usr/local/libexec/boot-to-windows /usr/share/polkit-1/actions/com.masonflint.BootToWindows.set-next-boot.policy \
+         /usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules; do
+    ! as_root test -e "$f" || fail "$f still there"
+done
+pass "removed"
+set +e; out=$(gjs -m "$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/helper/install.js" 2>&1); rc=$?; set -e
+assert_eq "$rc" 1 "refuses to run without root"
+assert_contains "$out" "run this with sudo" "says why"
+
+log "8. clean logs"
 assert_eq "$(shellctl errors "$EXT_UUID")" "" "GetExtensionErrors empty"
 assert_no_log_errors
