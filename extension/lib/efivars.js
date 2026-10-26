@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Pure parsers for the UEFI variables this extension reads. No GI imports, so
-// the same code runs in the shell, in the root helper, and in unit tests.
+// Parsers for the UEFI variables we read. No GI imports, so the shell, the
+// root helper and the unit tests can all use them.
 //
-// efivarfs file layout: 4-byte little-endian attributes, then the variable
-// data. All parsers take the whole file (attributes included).
+// An efivarfs file is 4 bytes of little-endian attributes followed by the
+// variable's data. The parsers take the whole file, attributes included.
 
 import {EFI_GLOBAL_GUID} from './constants.js';
 
 const ATTR_BYTES = 4;
 
-/** LOAD_OPTION_ACTIVE: the firmware only boots entries with this bit set. */
+// The firmware only boots entries with this bit set.
 const LOAD_OPTION_ACTIVE = 0x1;
 
-/** Device path node types we care about (UEFI spec §10.3). */
+// Device path node type/subtype for a file path (UEFI spec 10.3).
 const DP_MEDIA = 0x04;
 const DP_MEDIA_FILE_PATH = 0x04;
 
@@ -30,22 +30,19 @@ function view(bytes) {
     return new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
 }
 
-/** File name of a global variable in efivarfs, e.g. `BootNext-8be4…`. */
+// e.g. BootNext -> BootNext-8be4df61-...
 export function varFileName(name) {
     return `${name}-${EFI_GLOBAL_GUID}`;
 }
 
-/** 0 → "0000", 0x1a → "001A": the form efibootmgr and the firmware use. */
+// 0x1a -> "001A", the way efibootmgr writes entry numbers.
 export function formatEntry(num) {
     if (!Number.isInteger(num) || num < 0 || num > 0xffff)
         throw new RangeError(`not a boot entry number: ${num}`);
     return num.toString(16).toUpperCase().padStart(4, '0');
 }
 
-/**
- * Entry number for an efivarfs file name like `Boot0003-<global guid>`, or
- * null if the name isn't a global Boot#### variable.
- */
+// Boot0003-<global guid> -> 3. Anything else -> null.
 export function bootEntryNumber(fileName) {
     const m = BOOT_ENTRY_RE.exec(fileName);
     if (!m || m[2].toLowerCase() !== EFI_GLOBAL_GUID)
@@ -53,14 +50,14 @@ export function bootEntryNumber(fileName) {
     return parseInt(m[1], 16);
 }
 
-/** BootNext / BootCurrent: a single u16. */
+// BootNext and BootCurrent are a single u16.
 export function parseU16Var(bytes) {
     if (bytes.byteLength !== ATTR_BYTES + 2)
         throw new EfiParseError(`expected 6 bytes, got ${bytes.byteLength}`);
     return view(bytes).getUint16(ATTR_BYTES, true);
 }
 
-/** BootOrder: an array of u16. */
+// BootOrder is an array of u16.
 export function parseBootOrder(bytes) {
     const len = bytes.byteLength - ATTR_BYTES;
     if (len < 0 || len % 2 !== 0)
@@ -72,7 +69,7 @@ export function parseBootOrder(bytes) {
     return order;
 }
 
-/** Read a NUL-terminated UCS-2 string; returns [string, offsetAfterNul]. */
+// Reads a NUL-terminated UCS-2 string. Returns [string, offset after the NUL].
 function readUcs2z(dv, start, end) {
     let s = '';
     for (let off = start; off + 1 < end; off += 2) {
@@ -85,12 +82,12 @@ function readUcs2z(dv, start, end) {
 }
 
 /**
- * EFI_LOAD_OPTION (a Boot#### variable):
+ * Parse a Boot#### variable (EFI_LOAD_OPTION):
  *   u32 Attributes, u16 FilePathListLength, CHAR16 Description[],
  *   EFI_DEVICE_PATH FilePathList[], u8 OptionalData[]
  *
- * Returns {active, description, filePaths}. filePaths are the media
- * file-path nodes (e.g. `\EFI\Microsoft\Boot\bootmgfw.efi`).
+ * Returns {active, description, filePaths}, where filePaths holds any
+ * file path nodes, like \EFI\Microsoft\Boot\bootmgfw.efi.
  */
 export function parseLoadOption(bytes) {
     const dv = view(bytes);
@@ -115,7 +112,7 @@ export function parseLoadOption(bytes) {
         if (nodeLen < 4 || off + nodeLen > pathEnd)
             throw new EfiParseError('bad device path node length');
         if (type === DP_MEDIA && subtype === DP_MEDIA_FILE_PATH) {
-            // The path may or may not include its NUL; read up to node end.
+            // Not every firmware NUL-terminates this, so stop at the node end.
             let p = '';
             for (let i = off + 4; i + 1 < off + nodeLen; i += 2) {
                 const ch = dv.getUint16(i, true);
@@ -125,8 +122,8 @@ export function parseLoadOption(bytes) {
             }
             filePaths.push(p);
         }
-        // End nodes (type 0x7f) separate or close path instances. Walk the
-        // whole list so file paths in later instances are seen too.
+        // Keep going past end nodes (0x7f): there can be more than one
+        // path instance in the list.
         off += nodeLen;
     }
 
@@ -138,10 +135,9 @@ export function parseLoadOption(bytes) {
 }
 
 /**
- * Build a state.js Snapshot from efivarfs file contents.
- *
- * Unparseable variables are skipped and reported in `problems` rather than
- * failing the whole read: one odd vendor entry shouldn't hide the toggle.
+ * Build a state.js Snapshot from efivarfs file contents. Variables that
+ * don't parse are skipped and listed in `problems`, so one weird vendor
+ * entry doesn't hide the toggle.
  *
  * @param {boolean} efi  whether the efivars directory exists at all
  * @param {Map<string, Uint8Array>} files  efivarfs file name → contents
@@ -177,7 +173,7 @@ export function snapshotFromFiles(efi, files, problems = []) {
     return snapshot;
 }
 
-/** Should this efivarfs file be read when building a snapshot? */
+// The files a snapshot needs: BootNext, BootOrder and Boot####.
 export function isRelevantVar(fileName) {
     return fileName === varFileName('BootNext') ||
         fileName === varFileName('BootOrder') ||
@@ -186,11 +182,8 @@ export function isRelevantVar(fileName) {
 
 const WINDOWS_LOADER_RE = /\\EFI\\Microsoft\\Boot\\bootmgfw\.efi$/i;
 
-/**
- * Is this load option the Windows Boot Manager? Windows always registers
- * itself with this description, but match the loader path too so a renamed
- * entry still counts.
- */
+// Windows names its entry "Windows Boot Manager". Check the loader path too
+// in case someone renamed it.
 export function isWindowsEntry(option) {
     if (option.description.trim() === 'Windows Boot Manager')
         return true;

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Turns a raw firmware snapshot into the one state the UI and helper act on.
-// Pure: no GI imports.
+// Turns a firmware snapshot into the state the UI and the helper work from.
+// No GI imports.
 
 /**
  * @typedef {object} LoadOption
@@ -36,7 +36,7 @@ function entry(snapshot, num) {
     return {num, description: opt ? opt.description : ''};
 }
 
-/** Active entries in the order the firmware would try them. */
+// Active entries, in the order the firmware would try them.
 function bootable(snapshot) {
     const seen = new Set();
     const nums = [];
@@ -46,7 +46,7 @@ function bootable(snapshot) {
             nums.push(n);
         }
     }
-    // Entries missing from BootOrder can still be targeted by BootNext.
+    // BootNext can point at entries that aren't in BootOrder.
     for (const n of [...snapshot.entries.keys()].sort((a, b) => a - b)) {
         if (!seen.has(n) && snapshot.entries.get(n).active)
             nums.push(n);
@@ -77,16 +77,15 @@ export function deriveState(snapshot) {
         return {status: 'windows-is-default', ...state};
     if (snapshot.bootNext === windowsNum)
         return {status: 'armed', ...state};
-    // Disarming points BootNext at the default entry rather than deleting it
-    // (efibootmgr 18 can't delete it), so that counts as "not armed".
+    // We disarm by pointing BootNext at the default (efibootmgr 18 can't
+    // delete it), so that counts as ready too.
     if (snapshot.bootNext === null || snapshot.bootNext === defaultNum)
         return {status: 'ready', ...state};
     return {status: 'other', ...state};
 }
 
 /**
- * Entry number a write should set BootNext to. 'windows' arms; 'default'
- * disarms by pointing the next boot at the normal default.
+ * The entry number to put in BootNext for `target`.
  *
  * @param {BootState} state
  * @param {'windows'|'default'} target
@@ -107,10 +106,11 @@ export function targetEntry(state, target) {
 }
 
 /**
- * Has the firmware reached the state a write to `target` asked for?
- * 'default' means the next boot is the usual one, whatever the status: that
- * also lets a BootNext someone else set be undone when Windows is the
- * default, or has no entry.
+ * Is the firmware already where a write to `target` would put it?
+ *
+ * 'default' just means the next boot is the usual one, whatever the status.
+ * That way a BootNext set by some other tool can still be undone when Windows
+ * is the default or has no entry.
  */
 export function reached(state, target) {
     if (target === 'windows') {

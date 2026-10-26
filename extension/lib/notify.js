@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// A clickable notification on every supported shell. GNOME 46 replaced the
-// Notification(source, title, body) constructor with a params object and
-// added a shared system source; GNOME 45 has only the old form.
+// Clickable notifications. GNOME 46 switched Notification to a params object
+// and added a shared system source; 45 only has the old constructor.
 
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as MessageTray from 'resource:///org/gnome/shell/ui/messageTray.js';

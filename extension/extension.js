@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Quick Settings toggle that sends the next restart - and only the next one -
-// to Windows, by setting the UEFI BootNext variable.
+// Quick Settings toggle that points UEFI BootNext at Windows for one restart.
 
 import GObject from 'gi://GObject';
 import Gio from 'gi://Gio';
@@ -27,7 +26,7 @@ const BootToWindowsToggle = GObject.registerClass({
         super._init({
             title: NAME,
             gicon,
-            // `checked` only ever shows what the firmware reports.
+            // We set `checked` ourselves, from what the firmware reports.
             toggleMode: false,
         });
 
@@ -73,10 +72,8 @@ const BootToWindowsToggle = GObject.registerClass({
         return this._state;
     }
 
-    /**
-     * Re-read the firmware. Out-of-order results are dropped, and nothing is
-     * read during a write: the write reports its own verified result.
-     */
+    // Re-read the firmware. Stale results are dropped, and writes do their
+    // own re-read, so this does nothing while one is running.
     async refresh() {
         if (this._busy)
             return;
@@ -97,11 +94,11 @@ const BootToWindowsToggle = GObject.registerClass({
     }
 
     _render() {
-        // Hidden until the first firmware read lands.
+        // Stay hidden until the first read finishes.
         const p = this._state ? presentation(this._state) : HIDDEN;
         this.visible = p.visible;
         this.checked = p.checked;
-        // This also disables the menu arrow while a write runs.
+        // Also greys out the menu arrow during a write.
         this.reactive = !this._busy;
         this.subtitle = this._busy ? 'Waiting…' : p.subtitle;
         this.menu.setHeader(this._gicon, 'Next Boot', p.header);
@@ -118,12 +115,12 @@ const BootToWindowsToggle = GObject.registerClass({
         this._write(this._state.status === 'armed' ? 'default' : 'windows');
     }
 
-    /** Resolves true if the firmware ended up where we asked. */
+    // Returns true if the firmware ended up pointing at `target`.
     async _write(target) {
         if (this._busy)
             return false;
         this._busy = true;
-        this._seq++; // drop a refresh in flight: it would show the old state
+        this._seq++; // ignore any refresh in flight, it'd show the old state
         this._render();
         try {
             const {state, route} = await setNextBoot(target, this._cancellable);
@@ -146,17 +143,17 @@ const BootToWindowsToggle = GObject.registerClass({
         }
     }
 
-    /** After the first change that needed a password, suggest one-click mode, once. */
+    // After the first password prompt, suggest one-click mode (only ever once).
     _offerOneClick() {
         const settings = this._extension.getSettings();
         if (settings.get_boolean('one-click-offered'))
             return;
         try {
             this._suggestion = notifyClickable('Skip the password next time?',
-                'Boot to Windows can switch with one click. Click here to set it up in its settings.',
+                'Click to set up one-click mode in the settings.',
                 () => this._extension.openPreferences());
         } catch (e) {
-            // Not shown, so not marked as offered.
+            // Don't mark it as offered, so we try again next time.
             console.error(`${NAME}: showing the one-click suggestion failed: ${e.message}`);
             return;
         }
@@ -167,12 +164,12 @@ const BootToWindowsToggle = GObject.registerClass({
     async _restartToWindows() {
         if (!await this._write('windows'))
             return;
-        // GNOME's own restart dialog, which can still be cancelled; Windows
-        // then stays armed and the top-bar icon shows it.
+        // GNOME's normal restart dialog. If the user cancels it, Windows
+        // stays armed and the top-bar icon stays up.
         try {
             SystemActions.getDefault().activateRestart();
         } catch (e) {
-            Main.notify(NAME, `Windows is set for the next restart, but restarting failed: ${e.message}`);
+            Main.notify(NAME, `Couldn't restart (${e.message}). Windows is still set for the next boot.`);
         }
     }
 });
@@ -184,7 +181,7 @@ class BootToWindowsIndicator extends SystemIndicator {
 
         const gicon = Gio.FileIcon.new(Gio.File.new_for_path(`${extension.path}/icons/${ICON_FILE}`));
 
-        // Top-bar icon, only while Windows is armed.
+        // Top-bar icon, shown while Windows is armed.
         this._icon = this._addIndicator();
         this._icon.gicon = gicon;
         this._icon.visible = false;
@@ -194,7 +191,7 @@ class BootToWindowsIndicator extends SystemIndicator {
             () => (this._icon.visible = this._toggle.state?.status === 'armed'));
         this.quickSettingsItems.push(this._toggle);
 
-        // Re-read when Quick Settings opens: another tool may have changed BootNext.
+        // Re-read when Quick Settings opens, in case something else changed BootNext.
         this._qsMenu = Main.panel.statusArea.quickSettings.menu;
         this._qsMenuId = this._qsMenu.connect('open-state-changed', (_m, open) => {
             if (open)

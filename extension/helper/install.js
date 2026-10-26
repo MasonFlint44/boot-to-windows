@@ -6,8 +6,7 @@
 //   sudo gjs -m <extension dir>/helper/install.js          install or update
 //   sudo gjs -m <extension dir>/helper/install.js remove   remove
 //
-// The steps are in lib/install.js; the settings page's buttons run the same
-// ones.
+// Runs the same steps as the settings page buttons (lib/install.js).
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -36,7 +35,7 @@ for (const step of verb === 'remove' ? uninstallSteps() : installSteps(extPath))
     print(step);
     const proc = Gio.Subprocess.new(['/bin/sh', '-c', step], Gio.SubprocessFlags.STDERR_PIPE);
     const [, , stderr] = proc.communicate_utf8(null, null);
-    // The settings page shows the last line of stderr: the step's own error.
+    // Pass the step's own error through; the settings page shows its last line.
     if (stderr?.trim())
         printerr(stderr.trimEnd());
     if (proc.get_exit_status() !== 0) {

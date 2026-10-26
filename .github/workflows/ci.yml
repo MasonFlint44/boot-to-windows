@@ -33,11 +33,8 @@ jobs:
           name: extension-zip
           path: build/*.shell-extension.zip
 
-  # Every GNOME Shell version metadata.json claims, in a real headless shell,
-  # with the strict version gate on, plus the harness self-tests (proof the
-  # assertions and the gate can fail). A version only belongs in
-  # shell-version if its row here is green. Images take each version's
-  # latest point release, not its .0.
+  # Integration tests on every version in metadata.json's shell-version, plus
+  # the harness self-tests. Only list a version there if its job passes.
   gnome-shell:
     runs-on: ubuntu-24.04
     strategy:

@@ -1,13 +1,13 @@
 #!/usr/bin/gjs -m
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Optional one-click helper for the Boot to Windows extension. Installed
-// root-owned to /usr/local/libexec/boot-to-windows/ and run through pkexec:
+// One-click helper for Boot to Windows. Installed root-owned in
+// /usr/local/libexec/boot-to-windows/ and run through pkexec:
 //
-//   boot-to-windows-helper windows   next boot goes to Windows, once
-//   boot-to-windows-helper default   next boot goes to the normal default
+//   boot-to-windows-helper windows   boot Windows next time only
+//   boot-to-windows-helper default   boot the default next time
 //
-// Prints the resulting state as reported by the firmware.
+// Prints the state read back from the firmware.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';

@@ -1,9 +1,9 @@
 {
   "uuid": "boot-to-windows@masonflint.com",
   "name": "Boot to Windows",
-  "description": "Adds a Quick Settings toggle that sends the next restart, and only the next one, to Windows on a UEFI dual-boot PC. It sets the firmware's one-time BootNext variable, so GRUB is never touched and you can't get stuck in Windows.\n\nBy default each change asks for your password. The settings page can set up an optional helper so it's one click, and has buttons that copy its setup commands to the clipboard.",
+  "description": "A Quick Settings toggle for UEFI dual-boot PCs that restarts into Windows once, then goes back to your usual system. It sets the firmware's one-time BootNext variable and leaves GRUB and your boot order alone.\n\nEach change asks for your password unless you set up the optional one-click helper in the settings. The settings page can also copy the helper's setup commands to your clipboard.",
   "shell-version": ["45", "46", "47", "48", "49", "50"],
   "settings-schema": "org.gnome.shell.extensions.boot-to-windows",
   "url": "https://github.com/MasonFlint44/boot-to-windows",
-  "version-name": "1.0.1"
+  "version-name": "1.0.2"
 }

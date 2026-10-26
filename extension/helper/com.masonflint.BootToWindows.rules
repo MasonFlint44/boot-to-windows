@@ -3,11 +3,10 @@
 // Boot to Windows one-click mode. Installed to
 // /usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules.
 //
-// Administrators (sudo/admin/wheel) who are logged in at this machine may
-// point the next boot at Windows, or back at the default, without typing a
-// password. They could do the same from the firmware boot menu, or with
-// sudo. Everyone else, and every remote or inactive session, still needs
-// an administrator password (the action's default).
+// Admins (sudo/admin/wheel) logged in at the machine can run the helper
+// without a password. They could pick the boot entry from the firmware menu
+// anyway. Everyone else, including remote and inactive sessions, gets the
+// action's default: an admin password prompt.
 polkit.addRule(function (action, subject) {
     if (action.id !== 'com.masonflint.BootToWindows.set-next-boot')
         return polkit.Result.NOT_HANDLED;

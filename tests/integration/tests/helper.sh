@@ -7,8 +7,8 @@
 #
 #   ROOT_SETUP=hooks/install-helper.sh ./run.sh <ver> ../../extension tests/helper.sh
 #
-# (The fake pkexec doesn't elevate, so the helper runs as the test user; that
-# is enough to prove the extension calls it, and that it works end to end.)
+# The fake pkexec doesn't elevate, so the helper runs as the test user. That's
+# enough to check the extension calls it and that it works.
 
 # Fail fast if the fake firmware didn't mount: every later step depends on it.
 [ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
@@ -52,7 +52,7 @@ rows=$(prefs_probe)
 echo "$rows"
 assert_contains "$rows" '"title":"Windows entry","subtitle":"Windows Boot Manager (Boot0001)"' "windows entry row"
 assert_contains "$rows" '"title":"Default entry","subtitle":"ubuntu (Boot0000)"' "default entry row"
-assert_contains "$rows" '"title":"One-click status","subtitle":"On. Administrators at this computer switch without a password."' "status row"
+assert_contains "$rows" '"title":"One-click status","subtitle":"On. Administrators at this computer can switch without a password."' "status row"
 assert_contains "$rows" '"title":"Turn off one-click switching"' "remove offered"
 assert_contains "$rows" '"title":"Remove","subtitle":"sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove"' "short terminal remove command"
 case $rows in *'"title":"Enable one-click switching"'*|*'"title":"Update the helper"'*) fail "install offered although installed" ;; esac

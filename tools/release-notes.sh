@@ -1,8 +1,7 @@
 #!/bin/sh
 # SPDX-License-Identifier: GPL-2.0-or-later
-# Print the CHANGELOG.md section for a version, after checking the release
-# is consistent: metadata.json's version-name matches and is valid, and the
-# changelog has a dated section for it.
+# Prints the CHANGELOG.md section for a version. Fails unless metadata.json's
+# version-name matches and the changelog has a dated section for it.
 #
 #   tools/release-notes.sh 1.0.0 > notes.md
 set -eu

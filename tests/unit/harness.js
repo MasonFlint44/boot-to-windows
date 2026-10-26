@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// A deliberately tiny test runner for GJS: register with test(), run with
-// run(). No dependencies, so the unit suite runs anywhere gjs does.
+// Minimal test runner for GJS, so the unit tests need nothing but gjs.
+// Register with test(), then call run().
 
 const tests = [];
 
@@ -65,7 +65,7 @@ export const assert = {
     },
 };
 
-/** Runs every registered test; resolves to the number of failures. */
+// Resolves to the number of failures.
 export async function run({filter = null} = {}) {
     let failed = 0, passed = 0;
     for (const {name, fn} of tests) {

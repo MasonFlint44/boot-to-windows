@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Preferences: what the firmware looks like, and the optional one-click
-// helper. Setting the helper up is always the user's explicit choice: a
-// button (one pkexec prompt), or a sudo command for a terminal.
+// Settings page: the current firmware state, and setting up the one-click
+// helper (with a button or a sudo command).
 
 import Adw from 'gi://Adw';
 import Gdk from 'gi://Gdk';
@@ -35,7 +34,7 @@ function sameBytes(a, b) {
     return a !== null && b !== null && a.length === b.length && a.every((x, i) => x === b[i]);
 }
 
-/** HELPER_MANIFEST with what's on disk now. */
+// HELPER_MANIFEST plus what's on disk now.
 function helperFiles(extPath) {
     return HELPER_MANIFEST.map(f => ({
         ...f,
@@ -46,22 +45,17 @@ function helperFiles(extPath) {
 }
 
 const STATUS_TEXT = {
-    'installed': 'On. Administrators at this computer switch without a password.',
-    'outdated': 'On, but older than this extension. Update it.',
-    'partial': 'Partly installed, so it is not used. Reinstall it.',
-    'untrusted': 'Found, but not safely installed (not root-owned), so it is not used. Reinstall it.',
-    'unsafe-parent': `Installed, but not used: a folder above ${HELPER_DIR} is a link, or writable by non-root users.`,
-    'missing': 'Off. Each change asks for an administrator password.',
-    'image-based': 'Not available: this system’s /usr is read-only (an image-based system such as ' +
-        'Fedora Silverblue). Each change asks for an administrator password.',
+    'installed': 'On. Administrators at this computer can switch without a password.',
+    'outdated': 'On, but older than this version of the extension.',
+    'partial': 'Partial install. Not in use.',
+    'untrusted': 'Unsafe permissions. Not in use.',
+    'unsafe-parent': `Installed, but not used because a folder above ${HELPER_DIR} is a symlink or writable by other users.`,
+    'missing': 'Off. Every change asks for an administrator password.',
+    'image-based': 'Not available on systems with a read-only /usr, like Fedora Silverblue.',
 };
 
-/**
- * A row whose text is shown literally (firmware strings and commands are
- * arbitrary). Markup goes off before any text is set: construct properties
- * have no order, and text parsed as markup first logs warnings (and renders
- * empty on GNOME 45-47 when it contains '&').
- */
+// Row with plain-text title and subtitle. use_markup has to be off before the
+// text is set, or GNOME 45-47 shows an empty row for text containing '&'.
 function plainRow(title, subtitle) {
     const row = new Adw.ActionRow({use_markup: false});
     row.title = title;
@@ -69,7 +63,6 @@ function plainRow(title, subtitle) {
     return row;
 }
 
-/** A toast whose text is shown literally (error messages are arbitrary). */
 function plainToast(title, timeout = 5) {
     const toast = new Adw.Toast({timeout, use_markup: false});
     toast.title = title;
@@ -89,7 +82,7 @@ function copyButton(text, toastTarget) {
     });
     b.connect('clicked', () => {
         Gdk.Display.get_default().get_clipboard().set(text);
-        toastTarget.add_toast(plainToast('Copied. Paste it into a terminal.'));
+        toastTarget.add_toast(plainToast('Copied'));
     });
     return b;
 }
@@ -117,7 +110,6 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         return this._render();
     }
 
-    /** (Re)build the page from what's on disk now. */
     async _render() {
         let snapshot = null, error = null;
         try {
@@ -126,7 +118,7 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             error = e;
         }
         if (!this._page)
-            return; // the window was closed meanwhile
+            return; // window closed while we were reading
         for (const g of this._groups)
             this._page.remove(g);
         this._groups = [this._firmwareGroup(snapshot, error), this._helperGroup()];
@@ -134,7 +126,6 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             this._page.add(g);
     }
 
-    /** Run a button's job; whatever happens, show the outcome and re-render. */
     async _run(b, job) {
         b.sensitive = false;
         b.label = 'Waiting…';
@@ -159,13 +150,13 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
     _firmwareGroup(snapshot, error) {
         const group = new Adw.PreferencesGroup({title: 'Firmware'});
         if (error) {
-            group.add(plainRow('Status', `Couldn’t read the firmware’s boot settings: ${error.message}`));
+            group.add(plainRow('Status', `Couldn't read the boot variables: ${error.message}`));
             return group;
         }
         const state = deriveState(snapshot);
         const entry = e => (e ? `${e.description} (Boot${formatEntry(e.num)})` : 'None');
         const statusText = {
-            'unsupported': 'This computer did not start in UEFI mode',
+            'unsupported': 'Not booted in UEFI mode',
             'no-windows': 'No Windows Boot Manager entry found',
             'windows-is-default': 'Windows already starts by default',
             'ready': 'Next restart starts as usual',
@@ -173,8 +164,8 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             'other': `Next restart starts ${entry(state.bootNext)}`,
         }[state.status];
 
-        // A one-time boot that isn't the usual one can always be undone
-        // here, even in states where the toggle is hidden.
+        // Any one-time boot can be undone from here, even when the toggle is
+        // hidden.
         const undo = row => this._withButton(row, 'Start as usual', null,
             () => setNextBoot('default'));
         const pending = state.status !== 'unsupported' && state.defaultEntry !== null &&
@@ -192,7 +183,7 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             group.add(plainRow('Skipped (unreadable)', snapshot.problems.join('\n')));
         const efibootmgr = EFIBOOTMGR_CANDIDATES.find(p => isTrustedInfo(queryTrustInfo(Gio, p)));
         group.add(plainRow('efibootmgr',
-            efibootmgr ?? 'Not installed. Install the "efibootmgr" package.'));
+            efibootmgr ?? 'Not found. Install the efibootmgr package.'));
         return group;
     }
 
@@ -201,12 +192,10 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         const status = imageBased ? 'image-based' : helperStatus(helperFiles(this.path));
         const group = new Adw.PreferencesGroup({
             title: 'One-click mode',
-            description: 'Lets administrators logged in at this computer switch ' +
-                'without typing a password. It installs a small helper that can ' +
-                'only point the next boot at Windows or back at the default. ' +
-                'Setting it up asks for an administrator password once. ' +
-                'Turn it off here before removing the extension: removing the ' +
-                'extension leaves the helper installed.',
+            description: 'Lets administrators at this computer switch without a ' +
+                'password. It installs a small helper that can only set the next ' +
+                'boot to Windows or the default. Turn this off before you remove ' +
+                'the extension, or the helper stays installed.',
         });
         group.add(plainRow('One-click status', STATUS_TEXT[status]));
         if (imageBased)
@@ -219,17 +208,17 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
             action('Enable one-click switching', 'Asks for an administrator password once',
                 'Enable', installSteps(this.path), 'suggested-action');
         } else if (status !== 'installed') {
-            action('Update the helper', 'Reinstalls it from this version of the extension',
+            action('Update the helper', 'Installs the copy that comes with this version',
                 'Update', installSteps(this.path), 'suggested-action');
         }
         if (status !== 'missing') {
-            action('Turn off one-click switching', 'Removes the helper; changes ask for a password again',
+            action('Turn off one-click switching', 'Changes will ask for a password again',
                 'Remove', uninstallSteps(), 'destructive-action');
         }
 
         const terminal = new Adw.ExpanderRow({
             title: 'Use a terminal instead',
-            subtitle: 'The same steps, run with sudo',
+            subtitle: 'Run the same steps with sudo',
         });
         const home = GLib.get_home_dir();
         terminal.add_row(commandRow('Install or update', terminalCommand(this.path, 'install', home), this._window));

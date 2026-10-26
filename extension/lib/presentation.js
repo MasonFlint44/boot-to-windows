@@ -1,17 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// What the toggle and its menu show for each boot state. Pure: no GI imports.
+// What the toggle and its menu show for each state. No GI imports.
 
-/** Symbolic (recoloured to the theme), in the extension's icons/ folder. */
-export const ICON_FILE = 'boot-to-windows-symbolic.svg';
+export const ICON_FILE = 'boot-to-windows-symbolic.svg'; // in icons/
 export const NAME = 'Boot to Windows';
 
-/**
- * What the toggle shows for each state. When there is nothing to switch to
- * (no UEFI, no Windows entry, or Windows already boots by default) the toggle
- * is hidden, as GNOME does for e.g. Bluetooth without an adapter; the
- * settings page explains why.
- */
+// If there's nothing to switch to (no UEFI, no Windows entry, or Windows is
+// already the default) the toggle hides, like Bluetooth does without an
+// adapter. The settings page says why.
 export function presentation(state) {
     const def = state.defaultEntry?.description || 'the default system';
     switch (state.status) {

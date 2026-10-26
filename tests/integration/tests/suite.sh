@@ -30,7 +30,7 @@ wait_checked() { wait_until 10 eval "test \"\$(shellctl eval '$T.checked')\" = $
 
 log_mark
 
-log "1. loads, one toggle, honest initial state"
+log "1. loads with one toggle in the right initial state"
 assert_ext_active
 assert_eq "$(shell_eval "$(qs_toggles_js "$NAME").length")" 1 "exactly one toggle"
 wait_until 5 eval 'test "$(shellctl eval "$T.reactive")" = true' || fail "toggle never became clickable"
@@ -263,7 +263,7 @@ pass "no disposed-object warnings"
 
 log "17. preferences page without the helper offers to enable it"
 rows=$(prefs_probe)
-assert_contains "$rows" '"title":"One-click status","subtitle":"Off. Each change asks for an administrator password."' "status"
+assert_contains "$rows" '"title":"One-click status","subtitle":"Off. Every change asks for an administrator password."' "status"
 assert_contains "$rows" '"title":"Enable one-click switching"' "enable offered"
 assert_contains "$rows" '"title":"Install or update","subtitle":"sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js"' "short terminal command shown"
 case $rows in *'"title":"Turn off one-click switching"'*) fail "remove offered with nothing installed" ;; esac

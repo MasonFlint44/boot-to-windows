@@ -5,8 +5,8 @@
           path="/org/gnome/shell/extensions/boot-to-windows/">
     <key name="one-click-offered" type="b">
       <default>false</default>
-      <summary>One-click mode has been offered</summary>
-      <description>Set after the extension has once suggested one-click mode, so it never asks again.</description>
+      <summary>One-click mode has been suggested</summary>
+      <description>Set once the one-click mode notification has been shown, so it only shows once.</description>
     </key>
   </schema>
 </schemalist>

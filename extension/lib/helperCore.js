@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Logic of the optional root helper, kept apart from its entry point so it can
-// be unit-tested with fake firmware and a fake efibootmgr.
+// The root helper's logic, split out from helper/boot-to-windows-helper so
+// the unit tests can run it against fake firmware and a fake efibootmgr.
 //
-// The helper only ever does one of two things: point BootNext at the Windows
-// Boot Manager, or at the normal default entry. It works out the entry numbers
-// itself from the firmware, so a caller can't steer it at anything else.
+// It can only point BootNext at Windows or at the default entry. It looks up
+// the entry numbers itself, so callers can't point it anywhere else.
 
 import {HELPER_VERBS} from './constants.js';
 import {formatEntry} from './efivars.js';

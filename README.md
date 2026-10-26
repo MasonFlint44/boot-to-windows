@@ -1,90 +1,89 @@
 # Boot to Windows
 
-A GNOME Shell Quick Settings toggle for UEFI dual-boot PCs. It sends the **next
-restart, and only that one**, to Windows. Your normal boot order, GRUB, and
-every later boot stay the same.
+A GNOME Shell Quick Settings toggle for UEFI dual-boot PCs. Turn it on and
+the next restart goes to Windows. The restart after that goes back to your
+usual system. GRUB and your boot order aren't touched.
 
-- **Toggle** "Boot to Windows" to arm or disarm. An icon appears in the top bar
-  while Windows is armed, so a pending switch never gets forgotten.
-- **Restart to Windows…** in the toggle's menu arms Windows and opens GNOME's
-  usual restart dialog (with its countdown and unsaved-work warning).
-- **Start as usual next time** undoes it.
-- The extension's **settings** show what the firmware will start next. They
-  can also undo a one-time boot that another tool set, even when the toggle
-  is hidden (for example when Windows is already the default).
+- Click the "Boot to Windows" toggle to arm or disarm it. A top-bar icon
+  shows while Windows is armed.
+- "Restart to Windows…" in the toggle's menu arms Windows and opens GNOME's
+  normal restart dialog.
+- "Start as usual next time" undoes it.
+- The settings page shows what the firmware will boot next. It can also undo
+  a one-time boot set by some other tool, even when the toggle is hidden
+  (e.g. when Windows is already the default).
 
 ## Install
 
 From [extensions.gnome.org](https://extensions.gnome.org) once it's listed
-there, or from a [GitHub release](https://github.com/MasonFlint44/boot-to-windows/releases):
+there, or download the zip from a
+[GitHub release](https://github.com/MasonFlint44/boot-to-windows/releases):
 
 ```sh
 gnome-extensions install boot-to-windows@masonflint.com.shell-extension.zip
 ```
 
-Then log out and back in (on Wayland, GNOME only loads new extensions at
-login) and turn it on in the Extensions app. Changes are listed in
-[CHANGELOG.md](CHANGELOG.md).
+On Wayland, log out and back in, then enable it in the Extensions app.
 
 ## How it works
 
-UEFI firmware has a one-shot variable, `BootNext`. The firmware boots that
-entry once, then deletes the variable itself. The extension:
+UEFI has a variable called `BootNext`. If it's set, the firmware boots that
+entry once and then deletes it. The extension:
 
-1. **Reads** `BootNext`, `BootOrder` and the `Boot####` entries straight from
-   `/sys/firmware/efi/efivars`. These are world-readable, so checking state
-   needs no privileges and no subprocess.
-2. **Finds** the Windows Boot Manager entry by its description or its loader
-   path (`\EFI\Microsoft\Boot\bootmgfw.efi`), and looks it up fresh every time,
-   so renumbered entries don't break it.
-3. **Writes** `BootNext` through `pkexec`, then re-reads the firmware and shows
-   what it actually reports. It never trusts an exit code alone.
+1. Reads `BootNext`, `BootOrder` and the `Boot####` entries from
+   `/sys/firmware/efi/efivars`. Anyone can read these, so no password is
+   needed just to check.
+2. Finds the Windows Boot Manager entry by its name or by its loader path
+   (`\EFI\Microsoft\Boot\bootmgfw.efi`). It looks it up again every time, in
+   case the entries got renumbered.
+3. Sets `BootNext` with `pkexec`, then reads the firmware again to check the
+   change took.
 
-Disarming points `BootNext` at your default entry rather than deleting it,
-because `efibootmgr` 18 (the current release) has a bug that breaks
-`--delete-bootnext` ([fixed upstream][ebm-fix], unreleased). The effect is the
-same: the next boot is your usual one, and then the firmware clears it.
+To disarm, it points `BootNext` at your default entry instead of deleting it.
+That has the same effect, and works around a bug in efibootmgr 18 that breaks
+`--delete-bootnext` ([fixed upstream][ebm-fix] but not released yet).
 
 [ebm-fix]: https://github.com/rhboot/efibootmgr/commit/0ca99d4
 
-## Password prompts and one-click mode
+## One-click mode
 
-Out of the box, every change asks for an administrator password: changing
-firmware variables needs root, and polkit guards `pkexec efibootmgr` that way.
-After the first one, the extension offers (once) to set up one-click mode.
+Changing firmware variables needs root, so by default every change asks for
+an admin password. After the first time, the extension offers to set up
+one-click mode, which lets admins at the computer switch without a password
+(GNOME already lets them restart without one).
 
-**One-click mode** lets administrators logged in at the computer switch
-without a password, the same way GNOME already lets them restart. Turn it on
-from the extension's settings, under **One-click mode** → **Enable**. That asks
-for an administrator password once. **Use a terminal instead** shows the
-same steps as one `sudo` command:
+To turn it on, open the extension's settings and click Enable under
+"One-click mode". It asks for your password once. If you'd rather use a
+terminal, the same steps are:
 
 ```sh
-sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js          # install or update
-sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove   # remove
+# install or update
+sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js
+# remove
+sudo gjs -m ~/.local/share/gnome-shell/extensions/boot-to-windows@masonflint.com/helper/install.js remove
 ```
 
-It installs:
+This installs:
 
-- a small helper, **root-owned**, in `/usr/local/libexec/boot-to-windows/`. It
-  takes exactly one word, `windows` or `default`, and works out the entry
-  numbers from the firmware itself, so it can't be pointed at anything else.
-- a polkit action for the helper. By default it asks for an admin password,
-- plus a polkit rule that skips the password only for members of `sudo`,
-  `admin` or `wheel` who are **logged in at this machine**. Other accounts,
-  and remote or inactive sessions, still need a password.
+- A small root-owned helper in `/usr/local/libexec/boot-to-windows/`. It only
+  accepts `windows` or `default` and reads the entry numbers from the
+  firmware itself, so it can't be used to boot anything else.
+- A polkit action for the helper, which asks for an admin password by
+  default.
+- A polkit rule that skips the password for members of `sudo`, `admin` or
+  `wheel` who are logged in locally. Other users, and remote or inactive
+  sessions, still get a password prompt.
 
-The extension only uses the helper if it, its modules, its policy, its rule
-and the folders above it are root-owned and writable by no one else.
-Otherwise it falls back to the password route. (On distros where users can't
-read `/usr/share/polkit-1/rules.d`, the rule itself can't be checked. That's
-fine: the rule only decides whether to ask for a password.) **Turn off
-one-click switching** in the same place removes everything.
+The extension only uses the helper if all of its files, and the folders
+above it, are owned by root and not writable by anyone else. Otherwise it
+asks for a password like before. Some distros don't let users read
+`/usr/share/polkit-1/rules.d`, in which case the rule can't be checked. That's
+OK, since the rule only decides whether to ask for a password.
 
-**Before removing the extension, turn one-click mode off.** Removing an
-extension can't run any code, so the helper and its polkit files would stay
-behind. If that already happened, the `remove` command above still works
-with a fresh copy of the extension, or delete them by hand:
+Turn one-click mode off before you remove the extension. GNOME doesn't run
+any code when an extension is removed, so the helper would be left behind.
+If that already happened, reinstall the extension and run the `remove`
+command above, or delete the files yourself:
 
 ```sh
 sudo rm -rf /usr/local/libexec/boot-to-windows
@@ -92,58 +91,50 @@ sudo rm -f /usr/share/polkit-1/actions/com.masonflint.BootToWindows.set-next-boo
            /usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules
 ```
 
-One-click mode isn't available on image-based systems such as Fedora
-Silverblue, where `/usr` is read-only; there each change asks for a password.
+One-click mode isn't available on image-based systems like Fedora
+Silverblue, since `/usr` is read-only there.
 
-The helper's two words, `windows` and `default`, are a fixed interface:
-updating the extension doesn't update an installed helper (that would take
-your password), so every later version keeps working with it. The settings
-page offers **Update** when the installed copy is older.
+Updating the extension doesn't update an installed helper, because that
+would need your password. The settings page shows an Update button when the
+helper is out of date, and newer versions of the extension keep working with
+older helpers in the meantime.
 
-Anyone at the keyboard could make the same choice from the firmware's boot
-menu. The narrow helper and the admin-only rule keep it at that.
+As for security: anyone at the keyboard can already pick Windows from the
+firmware's boot menu. The helper and the polkit rule don't allow anything
+beyond that.
 
 ## Requirements
 
-- A PC booted in UEFI mode with a Windows Boot Manager entry
+- A PC booted in UEFI mode, with a Windows Boot Manager entry
 - `efibootmgr`
-- GNOME Shell: see `shell-version` in [`metadata.json`](extension/metadata.json).
-  Every listed version (45–50) passes the full integration suite in CI, in a
+- GNOME Shell 45–50 (see `shell-version` in
+  [`metadata.json`](extension/metadata.json)). CI tests each version in a
   real headless GNOME Shell.
 
 ## Development
 
 ```sh
-npm install                       # eslint only; the extension has no runtime deps
+npm install                       # just eslint; the extension has no dependencies
 npm run lint
 npm test                          # unit tests (gjs)
-tests/integration/test-all.sh     # every suite + harness self-tests, real headless GNOME Shell 45-50 in Docker
-tests/integration/test-all.sh 50  # just one version
-./tools/pack.sh                   # build/…shell-extension.zip for extensions.gnome.org
-./tools/install-dev.sh            # install into your session (Wayland: log out/in after)
+tests/integration/test-all.sh     # integration tests, GNOME 45-50 in Docker
+tests/integration/test-all.sh 50  # one version
+./tools/pack.sh                   # build the zip for extensions.gnome.org
+./tools/install-dev.sh            # install into your session (log out/in on Wayland)
 ```
 
-**Releasing:** add a dated section to `CHANGELOG.md`, set `version-name` in
-`extension/metadata.json` to match ([semver](https://semver.org); leave
-`version` out, extensions.gnome.org sets it), commit, then tag and push:
+The integration tests run the extension in a real GNOME Shell against fake
+firmware variables and fake `pkexec`/`efibootmgr`, so nothing touches real
+NVRAM. See [`tests/integration/README.md`](tests/integration/README.md).
 
-```sh
-git tag -a v1.0.0 -m 'Boot to Windows 1.0.0' && git push origin v1.0.0
-```
+`extension/lib/` has the logic (parsing, state, install checks) with no GI
+imports, so the unit tests and the root helper can use it directly.
+`firmware.js` and `writer.js` are the Gio parts, and `extension.js` and
+`prefs.js` are just UI.
 
-The Release workflow checks that the tag, `version-name` and changelog agree,
-runs all of CI, and publishes a GitHub release with the tested zip and that
-changelog section as its notes. Upload the same zip to extensions.gnome.org.
-
-The integration suites (`tests/integration/tests/`) drive the real extension
-through GNOME Shell's Eval interface, against fake firmware variables and a
-fake `pkexec`/`efibootmgr`. Nothing touches real NVRAM. See
-[`tests/integration/README.md`](tests/integration/README.md).
-
-Code layout: `extension/lib/` holds pure, GI-free modules (`efivars`,
-`state`, `presentation`, `install`, `trust`, `helperCore`), unit-tested
-directly, plus thin Gio layers (`firmware`, `writer`). `extension.js` and
-`prefs.js` are only UI. The root helper reuses the same pure modules.
+To release: add a dated section to [CHANGELOG.md](CHANGELOG.md), set
+`version-name` in `metadata.json` to match, commit, and push a `vX.Y.Z` tag.
+The release workflow runs CI and attaches the tested zip to a GitHub release.
 
 ## License
 

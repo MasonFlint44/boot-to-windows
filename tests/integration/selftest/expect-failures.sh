@@ -1,6 +1,6 @@
 # shellcheck shell=bash
 # shellcheck disable=SC2016  # eval '…' conditions expand later, on purpose
-# Harness self-test: proves the assertions can fail. Run with selftest/broken-extension:
+# Harness self-test: checks the assertions can fail. Run with selftest/broken-extension:
 #   ./run.sh <major> selftest/broken-extension selftest/expect-failures.sh
 log "broken extension must be ERROR, with errors reported both ways"
 wait_ext_state "$EXT_UUID" ERROR 15

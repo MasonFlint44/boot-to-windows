@@ -21,6 +21,6 @@ assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "helper skippe
 
 log "2. preferences page says it is not trusted and offers a reinstall"
 rows=$(prefs_probe)
-assert_contains "$rows" '"title":"One-click status","subtitle":"Found, but not safely installed (not root-owned), so it is not used. Reinstall it."' "untrusted status"
+assert_contains "$rows" '"title":"One-click status","subtitle":"Unsafe permissions. Not in use."' "untrusted status"
 assert_contains "$rows" '"title":"Update the helper"' "update offered"
 assert_no_log_errors

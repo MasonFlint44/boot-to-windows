@@ -1,14 +1,11 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Changes BootNext. Two routes, both through pkexec:
+// Changes BootNext through pkexec, either with the one-click helper (if it's
+// installed and root-owned, polkit can let it run without a password) or by
+// running efibootmgr directly, which asks for an admin password.
 //
-//   - the optional one-click helper, if it is installed root-owned (its polkit
-//     action lets the active local session run it without a password);
-//   - otherwise efibootmgr directly, which polkit's stock policy guards with
-//     an admin password prompt.
-//
-// Success is never inferred from an exit code: the firmware is re-read after
-// every write and the result is what it reports.
+// We don't go by exit codes. After every write we re-read the firmware and
+// report what it says.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -23,11 +20,11 @@ import {TRUST_ATTRIBUTES, infoFromError, infoFromGio, isTrustedInfo} from './tru
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
 Gio._promisify(Gio.File.prototype, 'query_info_async');
 
-/** pkexec exit codes (pkexec(1)). */
+// See pkexec(1).
 const PKEXEC_DISMISSED = 126;
 const PKEXEC_NOT_AUTHORIZED = 127;
 
-/** The user closed the password dialog. Not an error worth reporting. */
+// The user closed the password dialog. Not worth showing an error for.
 export class DismissedError extends Error {
     constructor() {
         super('Authentication dismissed');
@@ -53,13 +50,12 @@ async function fileInfo(path, cancellable) {
     }
 }
 
-/** Is the one-click helper installed and safe to hand to pkexec? */
+// Is the one-click helper installed and safe to run as root?
 export async function helperInstalled(cancellable = null) {
     return helperUsable(await Promise.all(
         HELPER_MANIFEST.map(f => fileInfo(f.installed, cancellable))));
 }
 
-/** First root-owned efibootmgr, or null. */
 export async function findEfibootmgr(cancellable = null) {
     for (const path of EFIBOOTMGR_CANDIDATES) {
         // eslint-disable-next-line no-await-in-loop
@@ -70,8 +66,6 @@ export async function findEfibootmgr(cancellable = null) {
 }
 
 /**
- * The privileged command for a write.
- *
  * @param {object} p
  * @param {'windows'|'default'} p.target
  * @param {import('./state.js').BootState} p.state
@@ -87,7 +81,6 @@ export function planCommand({target, state, helper, efibootmgr}) {
     return ['pkexec', efibootmgr, '--bootnext', formatEntry(targetEntry(state, target))];
 }
 
-/** Map a finished pkexec run to an outcome. */
 export function interpretExit(status, stderr) {
     if (status === 0)
         return null;
@@ -99,11 +92,8 @@ export function interpretExit(status, stderr) {
     return new WriteError(detail || `command failed with status ${status}`);
 }
 
-/**
- * Run a pkexec command. Resolves when it succeeded; rejects with
- * DismissedError or WriteError otherwise. Cancelling kills pkexec while it
- * is still waiting for a password.
- */
+// Rejects with DismissedError or WriteError on failure. Cancelling kills
+// pkexec, which also closes its password dialog.
 export async function runPrivileged(argv, cancellable = null) {
     const proc = Gio.Subprocess.new(argv,
         Gio.SubprocessFlags.STDOUT_SILENCE | Gio.SubprocessFlags.STDERR_PIPE);
@@ -120,9 +110,9 @@ export async function runPrivileged(argv, cancellable = null) {
 }
 
 /**
- * Point the next boot at Windows ('windows') or the normal default
- * ('default'). Resolves to the state the firmware actually reports, and the
- * route taken: 'none' (already there), 'helper' (one-click) or 'password'.
+ * Point the next boot at Windows or at the usual default. Resolves to the
+ * state read back from the firmware and the route used: 'none' (nothing to
+ * do), 'helper' or 'password'.
  *
  * @param {'windows'|'default'} target
  * @param {Gio.Cancellable|null} cancellable
@@ -140,8 +130,8 @@ export async function setNextBoot(target, cancellable = null) {
     const after = deriveState(await readSnapshot(cancellable));
     if (!reached(after, target)) {
         throw new WriteError(target === 'windows'
-            ? 'The firmware did not accept Windows as the next boot'
-            : 'The firmware did not accept the default as the next boot');
+            ? "Couldn't set Windows as the next boot"
+            : "Couldn't reset the next boot");
     }
     return {state: after, route: helper ? 'helper' : 'password'};
 }

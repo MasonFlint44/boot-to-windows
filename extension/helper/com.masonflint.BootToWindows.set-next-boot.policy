@@ -11,9 +11,7 @@
     <description>Choose whether the next boot goes to Windows</description>
     <message>Authentication is required to choose which system starts next</message>
     <defaults>
-      <!-- Everyone needs an administrator password by default. The companion
-           rule (50-com.masonflint.BootToWindows.rules) lets administrators
-           logged in at this machine skip it. -->
+      <!-- 50-com.masonflint.BootToWindows.rules lets local admins skip this. -->
       <allow_any>auth_admin</allow_any>
       <allow_inactive>auth_admin</allow_inactive>
       <allow_active>auth_admin</allow_active>

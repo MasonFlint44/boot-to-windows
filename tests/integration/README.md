@@ -1,13 +1,13 @@
-# GNOME Shell integration harness
+# GNOME Shell integration tests
 
-Runs **real gnome-shell** (headless Wayland, software rendering) in Docker for each
-GNOME major 45–50, installs an extension, and sources a bash test script that can
-drive the shell through D-Bus (`org.gnome.Shell.Extensions` + `org.gnome.Shell.Eval`).
-UEFI firmware is faked: fixture efivars on a tmpfs at `/sys/firmware/efi/efivars`,
-plus logging shims for `pkexec` and `efibootmgr`.
+Runs a real gnome-shell (headless Wayland, software rendering) in Docker for
+each GNOME version from 45 to 50, installs the extension, and runs a bash test
+script that drives the shell over D-Bus (`org.gnome.Shell.Extensions` and
+`org.gnome.Shell.Eval`). The firmware is fake: fixture efivars on a tmpfs at
+`/sys/firmware/efi/efivars`, plus logging shims for `pkexec` and `efibootmgr`.
 
 ```sh
-./test-all.sh                     # everything below, on every version in metadata.json (CI runs this)
+./test-all.sh                     # all suites and self-tests, every version in metadata.json (what CI runs)
 ./test-all.sh 50                  # one version
 
 ./run.sh <45..50> <extension-dir> [test-script]
@@ -17,79 +17,67 @@ ROOT_SETUP=hooks/install-helper.sh ./run.sh 50 ../../extension tests/helper.sh
 STRICT_METADATA=1 ./run.sh 46 selftest/broken-extension selftest/expect-out-of-date.sh
 ```
 
-The suites (`tests/`): `suite.sh` (password route, races, restart, hiding,
-settings page), `prefs-buttons.sh` (the settings buttons, run for real as root),
-`helper.sh` (one-click route), `helper-tampered.sh` (an unsafe install is
-refused). The self-tests (`selftest/`) prove the harness can fail: a broken
-extension must be caught, and the strict version gate must refuse an
-unlisted version.
+Suites in `tests/`:
 
-Exit code = test result (0 pass, 1 assertion failed, 90 shell never became ready).
-Logs land in `.work/out-<major>/` (gitignored): `run.log`, `shell.log` (gnome-shell
-stdout/stderr), `session-bus.log` (dbus + activated services), `pkexec.log`,
-`efibootmgr.log`, `efivars-final/`.
+- `suite.sh`: the password route, races, restart, hiding, the settings page
+- `prefs-buttons.sh`: the settings page's buttons, actually run as root
+- `helper.sh`: the one-click route
+- `helper-tampered.sh`: an unsafe helper install gets ignored
 
-## Observed results (2026-10-25, Docker Desktop 29.7.2 on Ubuntu 26.04 host)
+The self-tests in `selftest/` make sure the harness can fail: a broken
+extension has to be caught, and the strict version check has to reject a
+version that isn't listed.
 
-| GNOME | Base image | gnome-shell | Starts headless | Extension ACTIVE | disable→enable ×3 | Eval (via harness ext) | Firmware fixture + shims | Version gate (STRICT) |
-|---|---|---|---|---|---|---|---|---|
-| 45 | fedora:39 (EOL) | 45.10 | yes, ~1.0 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
-| 46 | fedora:40 (EOL) | 46.10 | yes, ~0.9 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
-| 47 | fedora:41 (EOL) | 47.10 | yes, ~1.1 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
-| 48 | fedora:42 | 48.8 | yes, ~0.9 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
-| 49 | fedora:43 | 49.10 | yes, ~0.8 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
-| 50 | fedora:44 | 50.6 | yes, ~0.8 s | yes | yes | yes | yes | OUT_OF_DATE as expected |
+The exit code is the result: 0 pass, 1 an assertion failed, 90 the shell
+never became ready. Logs go to `.work/out-<major>/` (gitignored): `run.log`,
+`shell.log` (gnome-shell output), `session-bus.log` (dbus and the services it
+starts), `pkexec.log`, `efibootmgr.log` and `efivars-final/`.
 
-`selftest/expect-failures.sh` (broken extension → ERROR, both error channels
-catch it, Eval refused when unsafe mode is off) is green on all six, and runs
-in CI with the suites. Images take the latest point release in each Fedora
-repo, not the `.0`, so a `.0`-specific regression would not be caught.
+Each version runs on the Fedora release that ships it (45 on fedora:39 up to
+50 on fedora:44). Images get the latest point release at build time, not the
+`.0`, so a bug only in a `.0` release wouldn't be caught. A run takes a few
+seconds once the image is built. Images are about 1.8 GB each; delete them
+when you're done (`docker rmi btw-gnome:{45..50}`).
 
-**Timings (this host, 20 cores):** cold image build 70–130 s per version (all six in
-parallel ≈ 2 min; dominated by the dnf download). Image size 1.7–1.9 GB each
-(gnome-shell hard-depends on evolution-data-server, gnome-control-center bits, etc.;
-`install_weak_deps=False` is already on). A run is ~3 s wall: the shell is READY in
-≈1 s; a suite takes a few seconds more.
+## How it works
 
-## How it works / flags
+- The shell runs as `gnome-shell --headless --no-x11 --virtual-monitor 1280x720`
+  on every version (override with `SHELL_ARGS=`). Mutter logs "Created
+  surfaceless renderer without GPU", which is fine: it's llvmpipe from
+  `mesa-dri-drivers`, no /dev/dri needed. 49 removed `--x11`, `--nested` and
+  the `--sm-*` options, but `--no-x11` is still there.
+- No systemd, `--privileged` or extra capabilities. Two things make up for it:
+  1. A system bus. gnome-shell 50 aborts at startup without one
+     (loginManager.js, timeLimitsManager.js). The entrypoint starts a bare
+     `dbus-daemon --system --fork`.
+  2. Deleting `/run/systemd`. systemd's RPM scriptlets leave
+     `/run/systemd/seats` in the image, and `loginManager.js` picks the logind
+     backend just because that directory exists, then dies without logind.
+     Without it the shell uses `LoginManagerDummy`.
+- The session runs as uid 1000 (`tester`) under `dbus-run-session`, with
+  `XDG_RUNTIME_DIR=/run/user/1000`. dconf is compiled before start with
+  `enabled-extensions=['harness@btw.test', <uuid>]`,
+  `disable-user-extensions=false`, no welcome dialog and no animations.
+- The shell counts as ready once `org.gnome.Shell` is on the bus,
+  `harness@btw.test` is ACTIVE and `Main.layoutManager._startingUp` is false.
+- `/ext` (read-only) is copied to
+  `~/.local/share/gnome-shell/extensions/<uuid>/`. By default the running
+  version is added to its `shell-version` so the version check can't block
+  loading. `STRICT_METADATA=1` turns that off to test the committed list.
+  Schemas in `schemas/` get compiled. `ENABLE_AT_START=0` starts with only the
+  harness extension enabled, so tests can call `ext_enable` themselves.
 
-- **Command:** `gnome-shell --headless --no-x11 --virtual-monitor 1280x720`, identical
-  on 45–50 (override with `SHELL_ARGS=`). Mutter logs "Created surfaceless renderer
-  without GPU" — llvmpipe via `mesa-dri-drivers`, no /dev/dri needed. `--no-x11` still
-  exists on 49/50; what 49 removed is `--x11`, `--nested` and the `--sm-*` options
-  (49 added `--devkit`). `--debug-control` exists on 46+.
-- **No systemd, no --privileged, no capabilities.** Two things are needed instead:
-  1. A **system** bus. Without one gnome-shell 50 aborts at startup (loginManager.js /
-     timeLimitsManager.js). The entrypoint runs a bare `dbus-daemon --system --fork`;
-     polkitd even bus-activates on it.
-  2. **Delete `/run/systemd`.** systemd's RPM scriptlets leave `/run/systemd/seats` in
-     the image, and `loginManager.js` picks the logind backend purely on
-     `GLib.access('/run/systemd/seats')`. With logind missing, that startup is fatal.
-     Without the dir the shell uses `LoginManagerDummy`.
-- **Session:** runs as uid 1000 `tester` under `dbus-run-session`, `XDG_RUNTIME_DIR=/run/user/1000`.
-  dconf is compiled offline (`dconf compile ~/.config/dconf/user`) before start with
-  `enabled-extensions=['harness@btw.test', <uuid>]`, `disable-user-extensions=false`,
-  the welcome dialog suppressed and animations off.
-- **Readiness** = `org.gnome.Shell` on the bus → `harness@btw.test` ACTIVE →
-  `Eval('Main.layoutManager._startingUp') === false`.
-- **Extension install:** `/ext` (ro) is copied to `~/.local/share/gnome-shell/extensions/<uuid>/`.
-  Its `metadata.json` `shell-version` has the running major **appended** by default, so
-  the version check can't block loading. `STRICT_METADATA=1` turns that off, so you test
-  the committed list (an unlisted major comes out `OUT_OF_DATE`, as the self-test shows). Schemas
-  under `schemas/` are compiled if present. `ENABLE_AT_START=0` starts with only the
-  harness extension enabled, so tests can `ext_enable` it themselves.
+### Eval
 
-### Eval / driving the UI
-
-There is **no `--unsafe-mode` CLI flag on any of 45–50**. Unsafe mode is only
-`global.context.unsafe_mode` (MetaContext:unsafe-mode), which Looking Glass toggles.
-`org.gnome.Shell.Eval` returns `(false, '')` while it is off on every version
-(confirmed by the self-test). The harness bakes a test-only system extension,
-`harness@btw.test` (`harness/harness-extension/`), whose `enable()` sets
-`global.context.unsafe_mode = true`. That makes Eval work identically on 45–50. The
-shell then posts a "System was put in unsafe mode" notification, which is harmless.
+None of 45–50 has an `--unsafe-mode` flag. Unsafe mode is just
+`global.context.unsafe_mode`, which Looking Glass toggles, and while it's off
+`org.gnome.Shell.Eval` returns `(false, '')`. So the image includes a
+test-only extension, `harness@btw.test` (`harness/harness-extension/`), that
+turns it on in `enable()`. The shell then shows a "System was put in unsafe
+mode" notification, which doesn't matter here.
 
 From a test:
+
 ```sh
 T=$(qs_toggle_js 'Boot to Windows')   # (Main.panel.statusArea.quickSettings.menu._grid.get_children().filter(c => c.title === "Boot to Windows"))[0]
 shell_eval "$T.checked"               # -> false   (JSON-stringified result)
@@ -97,77 +85,80 @@ shell_eval "$T.subtitle"              # -> null
 shell_eval "$T.emit('clicked', 1)"    # simulate a click
 shell_eval "$T.refresh()"             # call any method on the toggle
 ```
-`menu._grid` is a private field, but it exists and works on 45–50. `title`/`subtitle`
-are the QuickToggle property names on all of them.
+
+`menu._grid` is private, but it's there on 45–50.
 
 ### Fake firmware
 
-- `run.sh` passes `--security-opt systempaths=unconfined --mount type=tmpfs,destination=/sys/firmware`.
-  By default Docker masks `/sys/firmware` with a 4 KB read-only tmpfs, and a plain
-  `--mount`/`-v` there gets masked over. `systempaths=unconfined` drops the mask without
-  privileges. Binding a host dir straight onto `/sys/firmware/efi/efivars` fails,
-  because runc can't mkdir inside read-only sysfs. Binding a host dir onto
-  `/sys/firmware` also works (with unconfined), but the tmpfs keeps host fixtures pristine.
-- The entrypoint fills the tmpfs, owned by `tester`, with the default fixture: Boot0000
-  "ubuntu" (shimx64.efi), Boot0001 "Windows Boot Manager" (bootmgfw.efi), both with real
-  HD()+File() device paths, plus `BootOrder=0000,0001`, `BootCurrent=0000`, `Timeout=0`,
-  and **no BootNext**. Pass `FIXTURE_EFIVARS=<dir>` to seed real-format files instead.
-  Format = 4-byte LE attrs `07 00 00 00` + data. Helpers in `harness/efivars.sh`
-  (`efivar_write`, `efivar_boot_entry`, `efivar_data_hex`, `bootnext`, …) are
-  available inside tests.
-- The tmpfs also hides a real `/sys/firmware/efi` on the CI runner, so nothing in the
-  container can touch real NVRAM.
-- **`/usr/bin/pkexec` shim:** appends shell-quoted argv to `pkexec.log`, then execs the
-  command **as the same user** (no elevation). It requires an absolute path like real
-  pkexec. `pkexec_mode dismiss|deny` → exit 126/127 with pkexec's stderr text;
-  `slow` waits 3 s first; `root` really runs the command as root through the
-  harness's root job queue, like an approved prompt.
-- **`/usr/bin/efibootmgr` fake:** logs argv; supports `-n/--bootnext XXXX` (rejects
-  nonexistent entries), `-N/--delete-bootnext`, `-o/--bootorder`, and prints a real-style
-  listing. `efibootmgr_mode fail` → exit 1.
-- **Helper in `/usr/local/libexec/boot-to-windows/`:** tests run as uid 1000, so install
-  it root-owned from a hook: `ROOT_SETUP=path/to/setup.sh ./run.sh …`. The script runs
-  as root before the session (verified on 50). Because the pkexec shim runs the helper
-  as `tester`, the helper's writes to the fixture efivars succeed. The tmpfs is not
-  efivarfs, though: `chattr -i`/immutable semantics don't exist there, and the kernel
-  isn't validating writes.
+- `run.sh` passes `--security-opt systempaths=unconfined --mount
+  type=tmpfs,destination=/sys/firmware`. Docker normally masks `/sys/firmware`
+  with a small read-only tmpfs, and anything mounted there gets hidden under
+  it. `systempaths=unconfined` removes the mask without needing privileges.
+  Binding a host directory straight onto `/sys/firmware/efi/efivars` fails
+  because runc can't mkdir inside read-only sysfs.
+- The entrypoint fills the tmpfs with the default fixture: Boot0000 "ubuntu"
+  (shimx64.efi) and Boot0001 "Windows Boot Manager" (bootmgfw.efi), both with
+  real HD()+File() device paths, plus `BootOrder=0000,0001`,
+  `BootCurrent=0000`, `Timeout=0` and no BootNext. `FIXTURE_EFIVARS=<dir>`
+  seeds it from real files instead. Each file is 4 bytes of attributes
+  (`07 00 00 00`) and then the data. `harness/efivars.sh` has helpers for
+  tests (`efivar_write`, `efivar_boot_entry`, `efivar_data_hex`, `bootnext`,
+  …).
+- The tmpfs also hides the CI runner's own `/sys/firmware/efi`, so nothing in
+  the container can reach real NVRAM.
+- The `/usr/bin/pkexec` shim logs its arguments to `pkexec.log` and runs the
+  command as the same user, without elevating. Like real pkexec it wants an
+  absolute path. `pkexec_mode dismiss|deny` exits 126/127 with pkexec's
+  error text, `slow` waits 3 s first, and `root` runs the command as root
+  through the harness's root job queue, as if the prompt was approved.
+- The `/usr/bin/efibootmgr` fake logs its arguments and supports
+  `-n/--bootnext XXXX` (rejecting entries that don't exist),
+  `-N/--delete-bootnext`, `-o/--bootorder` and a listing in the real format.
+  `efibootmgr_mode fail` makes it exit 1.
+- Tests run as uid 1000, so the helper has to be installed root-owned from a
+  hook: `ROOT_SETUP=path/to/setup.sh ./run.sh …` runs the script as root
+  before the session starts. Since the pkexec shim runs the helper as
+  `tester`, its writes to the fixture efivars work. The tmpfs isn't efivarfs,
+  though, so there's no immutable flag and nothing validates writes.
 
-## Test-script API (`harness/lib.sh`)
+## Test script API (`harness/lib.sh`)
 
 `shell_eval JS`, `shellctl {version|eval|info|state|enable|disable|errors|list}`,
-`ext_state UUID` (names normalized: 45's ENABLED/DISABLED → ACTIVE/INACTIVE),
-`ext_enable/ext_disable`, `wait_ext_state UUID STATE [timeout]`,
-`assert_ext_active [UUID]` (ACTIVE + empty GetExtensionErrors), `log_mark` +
-`assert_no_log_errors [UUID]` (JS ERROR / CRITICAL blocks mentioning the uuid),
-`assert_eq`, `assert_contains`, `wait_until SECS cmd…` (use `eval '…'` for conditions
-with `$(…)`), `qs_toggles_js/qs_toggle_js TITLE`, `shim_reset`, `pkexec_calls`,
-`efibootmgr_calls`, `pkexec_mode`, `efibootmgr_mode`, `bootnext`. The script is sourced
-with `set -e`; `$EXT_UUID`, `$GNOME_MAJOR`, `$HARNESS_RUN` are set.
+`ext_state UUID` (45's ENABLED/DISABLED are reported as ACTIVE/INACTIVE),
+`ext_enable`/`ext_disable`, `wait_ext_state UUID STATE [timeout]`,
+`assert_ext_active [UUID]` (ACTIVE with no errors), `log_mark` +
+`assert_no_log_errors [UUID]` (JS ERROR / CRITICAL blocks mentioning the
+uuid), `assert_eq`, `assert_contains`, `wait_until SECS cmd…` (use
+`eval '…'` for conditions with `$(…)`), `qs_toggles_js`/`qs_toggle_js TITLE`,
+`shim_reset`, `pkexec_calls`, `efibootmgr_calls`, `pkexec_mode`,
+`efibootmgr_mode`, `bootnext`. Test scripts are sourced with `set -e`, and
+`$EXT_UUID`, `$GNOME_MAJOR` and `$HARNESS_RUN` are set.
 
 ## Gotchas
 
-- **EOL Fedora:** 39/40/41 still resolve through the normal metalink today. When they
-  stop, build with `REBUILD=1 ARCHIVE=1 ./run.sh …` (or `--build-arg ARCHIVE=1`), which rewrites
-  the repos to archives.fedoraproject.org (verified building 39).
-- **Point releases drift:** images take the latest point release at build time.
-  `REBUILD=1` refreshes them; pin with a dated build if you need reproducibility.
-- **Docker Desktop:** bind-mount sources must be under a shared path (`/home` is,
-  `/tmp` is not). That's why `.work/` lives in the repo.
-- The session bus activates lots of services (goa, evolution, portals, a11y). Their
-  noise goes to `session-bus.log`, not the test output.
-- No ibus, no GDM, no NetworkManager: the shell logs harmless messages about each.
-  Filter shell-log assertions by uuid (as `assert_no_log_errors` does), not globally.
+- Fedora 39, 40 and 41 are EOL but still resolve through the normal mirrors
+  for now. When they stop, build with `REBUILD=1 ARCHIVE=1 ./run.sh …` (or
+  `--build-arg ARCHIVE=1`) to use archives.fedoraproject.org instead.
+- Images pick up whatever point release is current when they're built.
+  `REBUILD=1` refreshes them.
+- With Docker Desktop, bind-mount sources have to be under a shared path
+  (`/home` is, `/tmp` isn't). That's why `.work/` is inside the repo.
+- The session bus starts a lot of services (goa, evolution, portals, a11y).
+  Their output goes to `session-bus.log`, not the test output.
+- There's no ibus, GDM or NetworkManager, and the shell logs harmless
+  messages about each. Filter shell log checks by uuid (like
+  `assert_no_log_errors` does) rather than checking the whole log.
 
 ## GitHub Actions
 
-`.github/workflows/ci.yml` runs `test-all.sh <major>` in a matrix over 45–50 on
-`ubuntu-24.04`, and uploads `.work/` (a hidden folder, hence
-`include-hidden-files: true`). Each job builds its own image (~1–2 min). Two
-things differ from a desktop host, and the harness already handles both:
-Ubuntu's AppArmor `docker-default` profile denies writes under `/sys/firmware`
-(so `run.sh` passes `apparmor=unconfined`), and `sudo` inside the container
-fails under PAM (so root work goes through the root job queue in
-`harness/rootq.sh`).
+`.github/workflows/ci.yml` runs `test-all.sh <major>` for each of 45–50 on
+`ubuntu-24.04` and uploads `.work/` (it's hidden, hence
+`include-hidden-files: true`). Each job builds its own image in a minute or
+two. Two things are different from a desktop, and the harness handles both:
+Ubuntu's AppArmor `docker-default` profile blocks writes under
+`/sys/firmware` (so `run.sh` passes `apparmor=unconfined`), and `sudo` inside
+the container fails under PAM (so root work goes through the root job queue
+in `harness/rootq.sh`).
 
 ## Layout
 
@@ -175,12 +166,12 @@ fails under PAM (so root work goes through the root job queue in
 Dockerfile                    one file, ARG FEDORA (+ ARCHIVE)
 run.sh                        host driver
 harness/entrypoint.sh         root: system bus, fixture efivars, ext install, dconf, hook
-harness/session.sh            tester: start shell, readiness, source test, teardown
+harness/session.sh            tester: start shell, wait for ready, source test, teardown
 harness/lib.sh, efivars.sh    test helpers
 harness/shellctl.js           gjs D-Bus client (Eval, extension info/state/enable/disable)
 harness/shims/                pkexec, efibootmgr fakes
-harness/harness-extension/    harness@btw.test (unsafe mode → Eval)
-hooks/                        ROOT_SETUP scripts (install the helper as users would)
+harness/harness-extension/    harness@btw.test (turns on unsafe mode for Eval)
+hooks/                        ROOT_SETUP scripts (install the helper like a user would)
 tests/                        the suites, plus prefs-probe.js (builds the real settings page)
-selftest/                     negative controls (run by test-all.sh)
+selftest/                     checks that the harness can fail (run by test-all.sh)
 ```

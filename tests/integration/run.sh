@@ -28,10 +28,7 @@ fi
 
 out=${OUT_DIR:-$HERE/.work/out-$major}
 rm -rf "$out"; mkdir -p "$out"
-# SC2054: commas belong to docker --mount syntax, not array separators
-# shellcheck disable=SC2054
-# The commas below are docker --mount syntax, not array separators.
-# shellcheck disable=SC2054
+# shellcheck disable=SC2054  # the commas are docker --mount syntax
 args=(--rm --init
       --security-opt systempaths=unconfined          # unmask /sys/firmware ...
       --security-opt apparmor=unconfined             # docker-default AppArmor denies writes under /sys/firmware/** (Ubuntu hosts, CI)

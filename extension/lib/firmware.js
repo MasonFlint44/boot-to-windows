@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //
-// Reads the UEFI boot variables from efivarfs. These files are world-readable,
-// so checking state never needs privileges or a subprocess.
+// Reads the boot variables from efivarfs. They're world-readable, so no
+// privileges or subprocesses needed.
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
@@ -17,13 +17,10 @@ function isIOError(e, code) {
     return e instanceof GLib.Error && e.matches(Gio.IOErrorEnum, code);
 }
 
-/**
- * A variable couldn't be read. One that vanished between listing and reading
- * (the firmware or another tool deleted it) is simply absent. A Boot####
- * entry that fails otherwise (buggy firmware can answer EIO) is skipped and
- * reported, so one bad entry doesn't hide everything. BootNext and BootOrder
- * can't be guessed, and cancelling must cancel: those errors propagate.
- */
+// A variable that disappeared after we listed it is just treated as absent.
+// A Boot#### entry that fails to read (some firmware returns EIO) is skipped
+// and reported. Anything else, including cancellation, is thrown: we can't
+// guess BootNext or BootOrder.
 function readFailed(name, e, problems) {
     if (isIOError(e, Gio.IOErrorEnum.NOT_FOUND))
         return;
@@ -33,8 +30,6 @@ function readFailed(name, e, problems) {
 }
 
 /**
- * Snapshot of the boot variables, read without blocking the shell.
- *
  * @param {Gio.Cancellable|null} cancellable
  * @param {string} dir  efivarfs mount; tests point this at a fixture dir
  */

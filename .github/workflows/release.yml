@@ -2,12 +2,12 @@
 #
 #   git tag -a v1.0.0 -m 'Boot to Windows 1.0.0' && git push origin v1.0.0
 #
-# The tag must match metadata.json's version-name, and CHANGELOG.md must have
-# a dated section for it (its text becomes the release notes). All of CI runs
-# first; the release carries the exact zip CI built and tested.
+# The tag has to match metadata.json's version-name, and CHANGELOG.md needs a
+# dated section for it, which becomes the release notes. CI runs first and the
+# release gets the zip it tested.
 #
-# Run it by hand (Actions → Release → Run workflow) for a dry run: everything
-# but publishing, with the zip and notes kept as a workflow artifact.
+# Running it by hand (Actions > Release > Run workflow) does a dry run that
+# skips publishing and keeps the zip and notes as a workflow artifact.
 name: Release
 on:
   push:

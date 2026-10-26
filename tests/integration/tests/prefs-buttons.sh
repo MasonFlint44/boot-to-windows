@@ -65,7 +65,7 @@ shim_reset
 shell_eval "$T.emit('clicked', 1)" >/dev/null
 wait_until 10 eval "test \"\$(shellctl eval '$T.checked')\" = false" || fail "never disarmed"
 if [ -x "$(dirname "$RULES")" ]; then      # can users look inside rules.d?
-    assert_contains "$rows" '"title":"One-click status","subtitle":"Partly installed, so it is not used. Reinstall it."' "partial status"
+    assert_contains "$rows" '"title":"One-click status","subtitle":"Partial install. Not in use."' "partial status"
     assert_contains "$rows" '"button":"Update"' "reinstall offered"
     assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0000" "password route, so the suggestion can say why"
 else
@@ -94,7 +94,7 @@ assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "efibootmgr ro
 log "6. image-based systems: explained, nothing offered, the installer refuses"
 as_root touch /run/ostree-booted
 rows=$(prefs_probe)
-assert_contains "$rows" '"title":"One-click status","subtitle":"Not available: this system' "explained"
+assert_contains "$rows" '"title":"One-click status","subtitle":"Not available on systems with a read-only /usr' "explained"
 case $rows in *'"button":"Enable"'*|*'"title":"Use a terminal instead"'*) fail "install offered on an image-based system" ;; esac
 pass "nothing offered"
 set +e; out=$(as_root /usr/bin/gjs -m "$INSTALLER" 2>&1); rc=$?; set -e
