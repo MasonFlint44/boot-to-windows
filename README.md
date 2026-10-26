@@ -13,6 +13,19 @@ every later boot stay the same.
   can also undo a one-time boot that another tool set, even when the toggle
   is hidden (for example when Windows is already the default).
 
+## Install
+
+From [extensions.gnome.org](https://extensions.gnome.org) once it's listed
+there, or from a [GitHub release](https://github.com/MasonFlint44/boot-to-windows/releases):
+
+```sh
+gnome-extensions install boot-to-windows@masonflint.com.shell-extension.zip
+```
+
+Then log out and back in (on Wayland, GNOME only loads new extensions at
+login) and turn it on in the Extensions app. Changes are listed in
+[CHANGELOG.md](CHANGELOG.md).
+
 ## How it works
 
 UEFI firmware has a one-shot variable, `BootNext`. The firmware boots that
@@ -109,6 +122,18 @@ tests/integration/test-all.sh 50  # just one version
 ./tools/pack.sh                   # build/…shell-extension.zip for extensions.gnome.org
 ./tools/install-dev.sh            # install into your session (Wayland: log out/in after)
 ```
+
+**Releasing:** add a dated section to `CHANGELOG.md`, set `version-name` in
+`extension/metadata.json` to match ([semver](https://semver.org); leave
+`version` out, extensions.gnome.org sets it), commit, then tag and push:
+
+```sh
+git tag -a v1.0.0 -m 'Boot to Windows 1.0.0' && git push origin v1.0.0
+```
+
+The Release workflow checks that the tag, `version-name` and changelog agree,
+runs all of CI, and publishes a GitHub release with the tested zip and that
+changelog section as its notes. Upload the same zip to extensions.gnome.org.
 
 The integration suites (`tests/integration/tests/`) drive the real extension
 through GNOME Shell's Eval interface, against fake firmware variables and a
