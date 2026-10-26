@@ -79,7 +79,7 @@ mode" notification, which doesn't matter here.
 From a test:
 
 ```sh
-T=$(qs_toggle_js 'Boot to Windows')   # (Main.panel.statusArea.quickSettings.menu._grid.get_children().filter(c => c.title === "Boot to Windows"))[0]
+T=$(qs_toggle_js 'Next Boot')         # (Main.panel.statusArea.quickSettings.menu._grid.get_children().filter(c => c.title === "Next Boot"))[0]
 shell_eval "$T.checked"               # -> false   (JSON-stringified result)
 shell_eval "$T.subtitle"              # -> null
 shell_eval "$T.emit('clicked', 1)"    # simulate a click

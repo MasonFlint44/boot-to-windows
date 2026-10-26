@@ -10,8 +10,8 @@
 # Fail fast if the fake firmware didn't mount: every later step depends on it.
 [ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
 
-NAME='Boot to Windows'
-T=$(qs_toggle_js "$NAME")
+TITLE='Next Boot'
+T=$(qs_toggle_js "$TITLE")
 HELPER=/usr/local/libexec/boot-to-windows/boot-to-windows-helper
 INSTALLER=$HOME/.local/share/gnome-shell/extensions/$EXT_UUID/helper/install.js
 RULES=/usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules

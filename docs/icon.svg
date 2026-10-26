@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SPDX-License-Identifier: GPL-2.0-or-later -->
+<!-- The extension's icon (extension/icons/), recolored for light and dark README themes. -->
+<svg xmlns="http://www.w3.org/2000/svg" width="96" height="96" viewBox="0 0 16 16">
+  <style>
+    g { fill: #2e3436; }
+    @media (prefers-color-scheme: dark) { g { fill: #e6edf3; } }
+  </style>
+  <g>
+    <path d="M 11.5 1.938 A 7 7 0 1 1 4.5 1.938 L 5.25 3.237 A 5.5 5.5 0 1 0 10.75 3.237 Z"/>
+    <path d="M 3.75 0.639 L 6 4.536 L 7.6 1.1 Z"/>
+    <path fill-rule="evenodd" d="M 4.75 5 h 6.5 v 6 h -6.5 Z M 5.75 7 h 4.5 v 3 h -4.5 Z"/>
+  </g>
+</svg>

@@ -13,8 +13,8 @@
 # Fail fast if the fake firmware didn't mount: every later step depends on it.
 [ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
 
-NAME='Boot to Windows'
-T=$(qs_toggle_js "$NAME")
+TITLE='Next Boot'
+T=$(qs_toggle_js "$TITLE")
 HELPER=/usr/local/libexec/boot-to-windows/boot-to-windows-helper
 wait_checked() { wait_until 10 eval "test \"\$(shellctl eval '$T.checked')\" = $1" || fail "checked never became $1"; }
 

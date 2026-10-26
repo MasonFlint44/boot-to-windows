@@ -14,6 +14,7 @@ import {ExtensionPreferences} from 'resource:///org/gnome/Shell/Extensions/js/ex
 import {EFIBOOTMGR_CANDIDATES, HELPER_DIR, IMAGE_BASED_MARKER} from './lib/constants.js';
 import {formatEntry} from './lib/efivars.js';
 import {readSnapshot} from './lib/firmware.js';
+import {defaultName} from './lib/presentation.js';
 import {
     HELPER_MANIFEST, asPkexecArgv, helperStatus, installSteps, terminalCommand,
     uninstallSteps,
@@ -155,18 +156,19 @@ export default class BootToWindowsPreferences extends ExtensionPreferences {
         }
         const state = deriveState(snapshot);
         const entry = e => (e ? `${e.description} (Boot${formatEntry(e.num)})` : 'None');
+        const def = defaultName(state) ?? 'the default';
         const statusText = {
             'unsupported': 'Not booted in UEFI mode',
             'no-windows': 'No Windows Boot Manager entry found',
             'windows-is-default': 'Windows already starts by default',
-            'ready': 'Next restart starts as usual',
+            'ready': `Next restart starts ${def}`,
             'armed': 'Next restart starts Windows',
             'other': `Next restart starts ${entry(state.bootNext)}`,
         }[state.status];
 
         // Any one-time boot can be undone from here, even when the toggle is
         // hidden.
-        const undo = row => this._withButton(row, 'Start as usual', null,
+        const undo = row => this._withButton(row, `Start ${def}`, null,
             () => setNextBoot('default'));
         const pending = state.status !== 'unsupported' && state.defaultEntry !== null &&
             !reached(state, 'default');

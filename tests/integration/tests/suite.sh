@@ -13,9 +13,9 @@
 # Fail fast if the fake firmware didn't mount: every later step depends on it.
 [ -f "$(efivar_path Boot0001)" ] || fail "fixture efivars missing at $EFIVARS (see the harness warning above)"
 
-NAME='Boot to Windows'
-T=$(qs_toggle_js "$NAME")
-IND="Main.panel.statusArea.quickSettings._indicators.get_children().find(c => c._toggle?.title === \"$NAME\")"
+TITLE='Next Boot'
+T=$(qs_toggle_js "$TITLE")
+IND="Main.panel.statusArea.quickSettings._indicators.get_children().find(c => c._toggle?.title === \"$TITLE\")"
 NOTES='Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === "Boot to Windows").map(n => n.body ?? n.bannerBodyText ?? "")'
 
 checked()  { shell_eval "$T.checked"; }
@@ -32,12 +32,15 @@ log_mark
 
 log "1. loads with one toggle in the right initial state"
 assert_ext_active
-assert_eq "$(shell_eval "$(qs_toggles_js "$NAME").length")" 1 "exactly one toggle"
+assert_eq "$(shell_eval "$(qs_toggles_js "$TITLE").length")" 1 "exactly one toggle"
 wait_until 5 eval 'test "$(shellctl eval "$T.reactive")" = true' || fail "toggle never became clickable"
 assert_eq "$(checked)" false "unchecked with no BootNext"
-assert_eq "$(subtitle)" null "no subtitle when nothing is armed"
+assert_eq "$(subtitle)" '"Ubuntu"' "subtitle names the default"
+assert_eq "$(shell_eval "$T.title")" '"Next Boot"' "short title"
+assert_eq "$(shell_eval "$T.accessible_name")" '"Boot to Windows"' "screen readers get the full name"
 assert_eq "$(icon_on)" false "top-bar icon hidden"
-assert_eq "$(shell_eval "$T.menu._headerSubtitle?.text ?? $T.menu._headerSubtitle?.get_text?.()")" '"ubuntu (as usual)"' "menu header names the default"
+assert_eq "$(shell_eval "$T.menu._headerTitle?.text ?? $T.menu._headerTitle?.get_text?.()")" '"Boot to Windows"' "menu header has the full name"
+assert_eq "$(shell_eval "$T.menu._headerSubtitle?.text ?? $T.menu._headerSubtitle?.get_text?.()")" '"Ubuntu"' "menu header names the default"
 assert_eq "$(shell_eval "$T.gicon.get_file().get_basename()")" '"boot-to-windows-symbolic.svg"' "toggle uses the bundled icon"
 assert_eq "$(shell_eval "$T.gicon.get_file().query_exists(null) && $IND._icon.gicon.equal($T.gicon)")" true "icon file is there; the top bar uses it too"
 
@@ -78,7 +81,8 @@ click
 wait_checked true
 assert_eq "$(bootnext)" 0001 "BootNext = Windows entry"
 assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "pkexec argv"
-assert_eq "$(subtitle)" '"Next restart"' "subtitle"
+assert_eq "$(subtitle)" '"Windows"' "subtitle"
+assert_eq "$(shell_eval "$T._disarmItem.label.text")" '"Start Ubuntu next time"' "undo item names the default"
 assert_eq "$(icon_on)" true "top-bar icon shown while armed"
 assert_eq "$(shell_eval "$NUDGE.length")" 1 "still just the one suggestion"
 
@@ -93,7 +97,7 @@ click
 wait_checked false
 assert_eq "$(bootnext)" 0000 "BootNext = default entry"
 assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0000" "pkexec argv"
-assert_eq "$(subtitle)" null "back to no subtitle"
+assert_eq "$(subtitle)" '"Ubuntu"' "back to the default"
 assert_eq "$(icon_on)" false "icon hidden again"
 
 log "4. double click while busy runs exactly one write"
@@ -159,7 +163,7 @@ log "10. BootNext set to another entry by someone else"
 efivar_boot_entry 0003 'UEFI:CD/DVD Drive' '\EFI\Boot\bootx64.efi'
 efivar_write BootNext "$(u16le 0003)"
 open_qs
-wait_until 5 eval 'test "$(subtitle)" = "\"Next: UEFI:CD/DVD Drive\""' || fail "subtitle: $(subtitle)"
+wait_until 5 eval 'test "$(subtitle)" = "\"UEFI:CD/DVD Drive\""' || fail "subtitle: $(subtitle)"
 assert_eq "$(checked)" false "not checked for another entry"
 assert_eq "$(shell_eval "$T._disarmItem.visible")" true "can undo it"
 close_qs
@@ -187,10 +191,10 @@ efivar_write BootOrder "$(u16list_hex 0001,0000)"   # Windows is the default: to
 efivar_write BootNext "$(u16le 0003)"
 shim_reset
 assert_contains "$(prefs_probe)" '"title":"Next restart","subtitle":"UEFI:CD/DVD Drive (Boot0003), once"' "pending boot shown"
-rows=$(prefs_probe 'Start as usual')
+rows=$(prefs_probe 'Start Windows')
 assert_eq "$(bootnext)" 0001 "BootNext = the default (Windows, here)"
 assert_eq "$(pkexec_calls)" "/usr/bin/efibootmgr --bootnext 0001" "one write"
-case $rows in *'"button":"Start as usual"'*) fail "still offered: $rows" ;; esac
+case $rows in *'"button":"Start Windows"'*) fail "still offered: $rows" ;; esac
 pass "nothing left to undo"
 efivar_write BootOrder "$(u16list_hex 0000,0001)"
 efivar_write BootNext "$(u16le 0000)"
@@ -238,18 +242,18 @@ pkexec_mode slow
 click
 ext_disable "$EXT_UUID"; wait_ext_state "$EXT_UUID" INACTIVE
 sleep 4                                  # let the slow pkexec finish
-assert_eq "$(shell_eval "$(qs_toggles_js "$NAME").length")" 0 "toggle gone"
+assert_eq "$(shell_eval "$(qs_toggles_js "$TITLE").length")" 0 "toggle gone"
 shim_reset
 ext_enable "$EXT_UUID"; wait_ext_state "$EXT_UUID" ACTIVE
 
 log "15. disable/enable cycles leave exactly one toggle and one indicator"
 for i in 1 2 3; do
     ext_disable "$EXT_UUID"; wait_ext_state "$EXT_UUID" INACTIVE
-    assert_eq "$(shell_eval "$(qs_toggles_js "$NAME").length")" 0 "cycle $i: gone"
+    assert_eq "$(shell_eval "$(qs_toggles_js "$TITLE").length")" 0 "cycle $i: gone"
     ext_enable "$EXT_UUID"; wait_ext_state "$EXT_UUID" ACTIVE
-    assert_eq "$(shell_eval "$(qs_toggles_js "$NAME").length")" 1 "cycle $i: one toggle"
+    assert_eq "$(shell_eval "$(qs_toggles_js "$TITLE").length")" 1 "cycle $i: one toggle"
 done
-assert_eq "$(shell_eval "Main.panel.statusArea.quickSettings._indicators.get_children().filter(c => c._toggle?.title === \"$NAME\").length")" 1 "one indicator"
+assert_eq "$(shell_eval "Main.panel.statusArea.quickSettings._indicators.get_children().filter(c => c._toggle?.title === \"$TITLE\").length")" 1 "one indicator"
 
 log "16. clean logs, and the suggestion was shown only once"
 assert_eq "$(shell_eval "Main.messageTray.getSources().flatMap(s => s.notifications).filter(n => n.title === 'Skip the password next time?').length")" 0 "no new suggestion after the first (the first was dismissed by activating it)"

@@ -13,22 +13,26 @@ import * as SystemActions from 'resource:///org/gnome/shell/misc/systemActions.j
 
 import {readSnapshot} from './lib/firmware.js';
 import {notifyClickable} from './lib/notify.js';
-import {ICON_FILE, NAME, presentation} from './lib/presentation.js';
+import {ICON_FILE, NAME, TOGGLE_TITLE, presentation} from './lib/presentation.js';
 import {deriveState} from './lib/state.js';
 import {DismissedError, setNextBoot} from './lib/writer.js';
 
-const HIDDEN = {visible: false, checked: false, subtitle: null, header: '', canDisarm: false};
+const HIDDEN = {visible: false, checked: false, subtitle: null, header: '', canDisarm: false,
+    disarmLabel: ''};
 
 const BootToWindowsToggle = GObject.registerClass({
     Signals: {'state-changed': {}},
 }, class BootToWindowsToggle extends QuickMenuToggle {
     _init(extension, gicon) {
         super._init({
-            title: NAME,
+            title: TOGGLE_TITLE,
             gicon,
             // We set `checked` ourselves, from what the firmware reports.
             toggleMode: false,
         });
+
+        // Screen readers would otherwise just say "Next Boot".
+        this.accessible_name = NAME;
 
         this._extension = extension;
         this._gicon = gicon;
@@ -40,7 +44,8 @@ const BootToWindowsToggle = GObject.registerClass({
 
         this._restartItem = this.menu.addAction('Restart to Windows…',
             () => this._restartToWindows());
-        this._disarmItem = this.menu.addAction('Start as usual next time',
+        // Labelled in _render(), with the default entry's name.
+        this._disarmItem = this.menu.addAction('',
             () => this._write('default'));
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         this.menu.addAction(`${NAME} Settings`,
@@ -101,9 +106,10 @@ const BootToWindowsToggle = GObject.registerClass({
         // Also greys out the menu arrow during a write.
         this.reactive = !this._busy;
         this.subtitle = this._busy ? 'Waiting…' : p.subtitle;
-        this.menu.setHeader(this._gicon, 'Next Boot', p.header);
+        this.menu.setHeader(this._gicon, NAME, p.header);
 
         this._restartItem.setSensitive(!this._busy && SystemActions.getDefault().canRestart);
+        this._disarmItem.label.text = p.disarmLabel;
         this._disarmItem.visible = p.canDisarm;
         this._disarmItem.setSensitive(!this._busy);
         this.emit('state-changed');

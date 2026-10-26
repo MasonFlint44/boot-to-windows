@@ -1,14 +1,17 @@
+<img src="docs/icon.svg" width="96" height="96" alt="">
+
 # Boot to Windows
 
 A GNOME Shell Quick Settings toggle for UEFI dual-boot PCs. Turn it on and
 the next restart goes to Windows. The restart after that goes back to your
 usual system. GRUB and your boot order aren't touched.
 
-- Click the "Boot to Windows" toggle to arm or disarm it. A top-bar icon
-  shows while Windows is armed.
+- The toggle is called "Next Boot" and shows what will start next, like
+  "Windows" or "Ubuntu". Click it to switch between Windows and your usual
+  system. A top-bar icon shows while Windows is armed.
 - "Restart to Windows…" in the toggle's menu arms Windows and opens GNOME's
   normal restart dialog.
-- "Start as usual next time" undoes it.
+- "Start Ubuntu next time" (or whatever your usual system is called) undoes it.
 - The settings page shows what the firmware will boot next. It can also undo
   a one-time boot set by some other tool, even when the toggle is hidden
   (e.g. when Windows is already the default).
