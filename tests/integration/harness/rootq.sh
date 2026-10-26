@@ -21,7 +21,9 @@ rootq_serve() {
             mapfile -d '' -t argv < "$id.run"
             "${argv[@]}" > "$id.out" 2> "$id.err" < /dev/null
             echo $? > "$id.rc.tmp"
-            chmod 644 "$id.out" "$id.err" "$id.rc.tmp"
+            # Hand the results to whoever asked: in this sticky directory
+            # only a file's owner may delete it.
+            chown "$(stat -c %u "$id.run")" "$id.out" "$id.err" "$id.rc.tmp"
             mv "$id.rc.tmp" "$id.rc"
         done
         sleep 0.05
