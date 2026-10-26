@@ -17,7 +17,8 @@ jobs:
         run: >
           shellcheck -x -e SC1091,SC2012
           tests/integration/run.sh tests/integration/test-all.sh
-          tests/integration/harness/*.sh tests/integration/hooks/*.sh tools/*.sh
+          tests/integration/harness/*.sh tests/integration/harness/shims/pkexec
+          tests/integration/hooks/*.sh tools/*.sh
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends gjs gnome-shell
       - run: npm test
       - run: ./tools/pack.sh

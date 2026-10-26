@@ -3,6 +3,8 @@
 # Env: EXT_UUID (extension under test), GNOME_MAJOR, HARNESS_RUN.
 # shellcheck source=efivars.sh
 . /opt/harness/efivars.sh
+# shellcheck source=rootq.sh
+. /opt/harness/rootq.sh
 
 shellctl() { gjs -m /opt/harness/shellctl.js "$@"; }
 

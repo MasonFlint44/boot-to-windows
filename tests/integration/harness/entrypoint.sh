@@ -73,6 +73,11 @@ export EXT_UUID
 # --- optional root-side setup hook (e.g. install /usr/local/libexec/boot-to-windows/<helper>
 # or a polkit policy). Tests run as uid 1000 and the pkexec shim does NOT elevate,
 # so anything that must be root-owned goes here. Mounted by run.sh from ROOT_SETUP=.
+# Root job queue for the fake pkexec's "root" mode and tests' as_root.
+# shellcheck source=rootq.sh
+. /opt/harness/rootq.sh
+rootq_serve &
+
 if [ -f /hooks/root-setup.sh ]; then echo "[harness] running root-setup hook"; bash /hooks/root-setup.sh; fi
 
 # --- dconf (compiled offline; no dconf-service needed before start) ----------

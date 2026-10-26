@@ -15,8 +15,8 @@ HELPER=/usr/local/libexec/boot-to-windows/boot-to-windows-helper
 RULES=/usr/share/polkit-1/rules.d/50-com.masonflint.BootToWindows.rules
 POLICY=/usr/share/polkit-1/actions/com.masonflint.BootToWindows.set-next-boot.policy
 # As root: on Fedora 39/40 the polkit rules directory is unreadable to users.
-rstat() { sudo -n stat -c "$1" "$2"; }
-rexists() { sudo -n test -e "$1"; }
+rstat() { as_root stat -c "$1" "$2"; }
+rexists() { as_root test -e "$1"; }
 
 log_mark
 assert_ext_active
